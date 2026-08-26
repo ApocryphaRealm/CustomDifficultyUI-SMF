@@ -1,0 +1,90 @@
+# Custom Difficulty UI - SMF Settings
+
+**Version 1.0.0.** A fresh, native C++ implementation of **Custom Difficulty UI** (Nexus
+skyrimspecialedition/mods/14362) with a real SKSE Menu Framework settings page. This isn't a
+port of a compiled DLL - the original mod has no SKSE plugin at all, only a SkyUI MCM (Papyrus +
+ESP) - so there is no existing C++ project to fork; this is a fresh CommonLibSSE-NG project that
+mirrors the original's own real settings surface 1:1.
+
+**Licence: MIT.** Original code, written from scratch for this project - see `LICENSE`.
+
+## What it does
+
+Independent damage multipliers for each of Skyrim's six difficulty levels (Very Easy / Easy /
+Normal / High / Very High / Legendary), split into two directions per level:
+
+- **Damage to you** - how hard enemies hit you at that difficulty.
+- **Damage by you** - how hard you hit enemies at that difficulty.
+
+A master **Enabled** toggle turns the whole thing off at once - and, unlike simply "stop
+touching them," actually resets all twelve multipliers back to Skyrim's own real vanilla values
+immediately, matching the original mod's own `SetDefaultSettings()` behaviour exactly, not just
+freezing whatever was last applied.
+
+Every default matches vanilla exactly, so installing this changes nothing about difficulty
+until you turn Enabled on and change a value:
+
+| Difficulty | To you (vanilla) | By you (vanilla) |
+| --- | --- | --- |
+| Very Easy | 0.50 | 2.00 |
+| Easy | 0.75 | 1.50 |
+| Normal | 1.00 | 1.00 |
+| High | 1.50 | 0.75 |
+| Very High | 2.00 | 0.50 |
+| Legendary | 3.00 | 0.25 |
+
+## Where this came from
+
+Custom Difficulty UI's own archive ships its actual Papyrus source (not just a compiled
+`.pex`) - `CustomDifficultyUIControlScript.psc` was read directly, not decompiled or guessed
+at (CLAUDE.md rule 30). Its entire mechanic is twelve calls to the SKSE-native Papyrus function
+`Game.SetGameSettingFloat()`, one per difficulty level times direction, naming the exact same
+twelve vanilla GameSettings this build writes to
+(`fDiffMultHPToPCVE`/`fDiffMultHPByPCVE`/... through `...PCL`). `SetDefaultSettings()` is where
+the vanilla-default table above comes from - upstream's own real reset values, not guessed.
+
+This build reimplements the same mechanic in native C++ against
+`RE::GameSettingCollection`/`RE::Setting` rather than Papyrus, with a real SMF settings page in
+place of the original's SkyUI MCM. Game mechanics (and the vanilla GameSetting names/values
+themselves) aren't copyrightable, so this carries no licensing entanglement with the original
+mod - only its own Papyrus/ESP implementation would be, and none of that was copied.
+
+## The API (small, and already vanilla-documented)
+
+- `RE::GameSettingCollection::GetSingleton()->GetSetting(name)` resolves each of the twelve
+  vanilla settings once, at `kMessage_DataLoaded` - checked for both a null result and an
+  unexpected `Setting::Type` (CLAUDE.md rule 30 - ask the object, don't assume) before ever
+  writing to it.
+- Writing a value is a direct assignment to the setting's own public `data.f` field - `Setting`
+  has no `SetFloat()` method exposed, only `GetFloat()`, so this is the same pattern other
+  runtime-GameSetting-tweaking SKSE plugins already use.
+
+## Settings persistence
+
+`Restore defaults` only resets the in-memory values to what this DLL compiles in (vanilla's own
+values, see the table above) - it never touches the INI. `Save` and `Reload from INI` are the
+only two actions that touch `CustomDifficultyUI.ini` on disk, written with plain file I/O (never
+`WritePrivateProfileString` - Mod Organizer 2's usvfs does not reliably redirect that API; see
+CLAUDE.md rule 16) so a save actually reaches disk under MO2.
+
+Because `GameSettingCollection` is a process-global engine structure, not per-save data, this
+mod also re-applies its twelve values at every `kMessage_PostLoadGame`/`kNewGame`, not just once
+at boot - matching the original's own `OnPlayerLoadGame()` re-apply.
+
+## Building
+
+CMake + vcpkg, matching every other mod in this project:
+
+```
+configure.bat
+build.bat
+```
+
+Requires `VCPKG_ROOT` pointing at a vcpkg checkout; Visual Studio (with the C++ toolset) plus
+the CMake and Ninja it ships with are located automatically by `find-msvc.bat`. See
+`CLAUDE.md` rules 4-5 for why these scripts never hardcode a machine-specific path.
+
+## Status
+
+Built - see this project's own `PROGRESS.md` for the current state (packaging/install/test
+status).
