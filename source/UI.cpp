@@ -176,12 +176,30 @@ namespace UI
 			HelpMarker("Off resets every multiplier below to Skyrim's own real vanilla defaults - "
 					   "not just \"stop touching them.\"");
 			ImGuiMCP::Spacing();
+			ImGuiMCP::TextDisabled("Each section below is one of Skyrim's own difficulty levels.");
+			ImGuiMCP::TextDisabled("Whichever difficulty you select in game uses that section's sliders.");
+			ImGuiMCP::Spacing();
 
-			RenderDifficultyLevel("Very Easy", "Damage to you##VE", &toPCVE, "Damage by you##VE", &byPCVE);
-			RenderDifficultyLevel("Easy", "Damage to you##E", &toPCE, "Damage by you##E", &byPCE);
-			RenderDifficultyLevel("Normal", "Damage to you##N", &toPCN, "Damage by you##N", &byPCN);
-			RenderDifficultyLevel("High", "Damage to you##H", &toPCH, "Damage by you##H", &byPCH);
-			RenderDifficultyLevel("Very High", "Damage to you##VH", &toPCVH, "Damage by you##VH", &byPCVH);
+			// Headed with the names the GAME shows in its own difficulty menu, not the internal
+			// suffixes of the settings behind them. Each section writes the vanilla
+			// fDiffMultHPToPC*/fDiffMultHPByPC* game setting for that difficulty, so the section
+			// a player is editing is exactly the one that takes effect when they select that
+			// difficulty in game - picking Legendary uses the Legendary sliders, with nothing
+			// extra needed to connect them.
+			//
+			// The old headings said "Very Easy / Easy / Normal / High / Very High" - the engine's
+			// internal names, and not even accurately ("Hard"/"Very Hard" internally). Nothing in
+			// Skyrim's own UI ever calls a difficulty "Very High", so a player had to guess which
+			// slider was the one they were actually playing on.
+			//
+			// The ##VE/##E/... suffixes are ImGui ID disambiguators, NOT visible text - they are
+			// deliberately left alone. Changing them would give every slider a new identity and
+			// silently reset any in-progress interaction state keyed on it.
+			RenderDifficultyLevel("Novice", "Damage to you##VE", &toPCVE, "Damage by you##VE", &byPCVE);
+			RenderDifficultyLevel("Apprentice", "Damage to you##E", &toPCE, "Damage by you##E", &byPCE);
+			RenderDifficultyLevel("Adept", "Damage to you##N", &toPCN, "Damage by you##N", &byPCN);
+			RenderDifficultyLevel("Expert", "Damage to you##H", &toPCH, "Damage by you##H", &byPCH);
+			RenderDifficultyLevel("Master", "Damage to you##VH", &toPCVH, "Damage by you##VH", &byPCVH);
 			RenderDifficultyLevel("Legendary", "Damage to you##L", &toPCL, "Damage by you##L", &byPCL);
 		}
 

@@ -5,6 +5,13 @@
 
 #include <windows.h>
 
+#include <algorithm>
+#include <cctype>
+#include <fstream>
+#include <map>
+#include <string>
+#include <type_traits>
+
 namespace settings
 {
 	using namespace utils;
@@ -53,6 +60,20 @@ namespace settings
 		};
 
 		std::vector<PendingWrite> pendingWrites;
+
+		// Section and key lookups are case-insensitive, matching how EqualsIgnoreCase already
+		// compares them elsewhere in this file and how INI files are conventionally treated.
+		struct CaseInsensitiveLess
+		{
+			bool operator()(const std::string& a_lhs, const std::string& a_rhs) const
+			{
+				return std::lexicographical_compare(
+					a_lhs.begin(), a_lhs.end(), a_rhs.begin(), a_rhs.end(),
+					[](unsigned char a_l, unsigned char a_r) {
+						return std::tolower(a_l) < std::tolower(a_r);
+					});
+			}
+		};
 
 		bool EqualsIgnoreCase(std::string_view a_lhs, std::string_view a_rhs)
 		{
@@ -330,13 +351,175 @@ namespace settings
 			return std::clamp(a_value, 0.0F, 20.0F);
 		}
 
+
+		// -----------------------------------------------------------------------------------
+		// Reading the INI ourselves, with plain file I/O
+		// -----------------------------------------------------------------------------------
+		//
+		// This exists because of a real, reproduced bug (2026-08-27): "Reload from INI" reported
+		// success and applied the pristine shipped values instead of what had just been saved.
+		//
+		// The cause was an ASYMMETRY between how this file was written and how it was read:
+		//
+		//   * FlushPendingWrites() below writes with plain file I/O, deliberately - rule 16
+		//     records that MO2's usvfs does not reliably redirect the Win32 profile APIs, so
+		//     WritePrivateProfileString can report success without reaching disk.
+		//   * Reload() used to read through the game's own INI machinery, which IS the Win32
+		//     profile API - and PrivateProfileRedirector (present in most large modlists) hooks
+		//     that family and answers from an in-memory cache it populated at startup.
+		//
+		// So our write went to disk and the read came from a cache that never learned about it.
+		// The redirector also periodically writes its cache back, which makes this a data-LOSS
+		// risk and not merely a stale-read one.
+		//
+		// The fix is symmetry: read the file the same way we write it. Do NOT "fix" this by
+		// switching the write to WritePrivateProfileString instead - that would make both halves
+		// agree by putting both back on the API rule 16 says is unreliable, trading a visible bug
+		// for a silent one.
+		using IniData = std::map<std::string, std::map<std::string, std::string, CaseInsensitiveLess>, CaseInsensitiveLess>;
+
+		// Parses iniPath into section -> key -> raw value. Comments, blank lines and keys this
+		// plugin does not know about are simply not represented; nothing is written back here.
+		// A missing or unreadable file yields an empty map, which callers treat as "keep current
+		// values" rather than as an error.
+		IniData ReadIniFile()
+		{
+			IniData data;
+
+			std::ifstream in(iniPath, std::ios::binary);
+
+			if (!in)
+			{
+				logger::warn("Could not open {} for reading; keeping the values already loaded", iniPath);
+
+				return data;
+			}
+
+			std::string line;
+			std::string currentSection;
+
+			while (std::getline(in, line))
+			{
+				if (!line.empty() && line.back() == '\r')
+				{
+					line.pop_back();
+				}
+
+				const std::string_view trimmed = Trim(line);
+
+				if (trimmed.empty() || trimmed.front() == ';' || trimmed.front() == '#')
+				{
+					continue;
+				}
+
+				if (trimmed.size() >= 2 && trimmed.front() == '[' && trimmed.back() == ']')
+				{
+					currentSection = std::string{ trimmed.substr(1, trimmed.size() - 2) };
+
+					continue;
+				}
+
+				const std::size_t separator = trimmed.find('=');
+
+				if (separator == std::string_view::npos)
+				{
+					continue;
+				}
+
+				std::string key{ Trim(trimmed.substr(0, separator)) };
+				std::string value{ Trim(trimmed.substr(separator + 1)) };
+
+				// An inline "; comment" after a value is common in hand-edited INIs and silently
+				// breaks a numeric parse, so it is stripped here rather than reaching the caller.
+				const std::size_t comment = value.find_first_of(";#");
+
+				if (comment != std::string::npos)
+				{
+					value = std::string{ Trim(std::string_view{ value }.substr(0, comment)) };
+				}
+
+				if (!key.empty())
+				{
+					data[currentSection][key] = std::move(value);
+				}
+			}
+
+			return data;
+		}
+
+		// Reads one "key:Section"-style name out of the parsed file, falling back to the current
+		// in-memory value when the key is absent or unparseable. The name format matches what
+		// Init() registers, so the two cannot drift apart.
+		template <typename T>
+		T ReadFromFile(const IniData& a_data, const char* a_name, T a_fallback)
+		{
+			const std::string_view name{ a_name };
+			const std::size_t      colon = name.find(':');
+
+			if (colon == std::string_view::npos)
+			{
+				logger::error("Setting name \"{}\" has no section suffix; keeping the current value", a_name);
+
+				return a_fallback;
+			}
+
+			const std::string key{ name.substr(0, colon) };
+			const std::string section{ name.substr(colon + 1) };
+
+			const auto sectionIt = a_data.find(section);
+
+			if (sectionIt == a_data.end())
+			{
+				return a_fallback;
+			}
+
+			const auto keyIt = sectionIt->second.find(key);
+
+			if (keyIt == sectionIt->second.end())
+			{
+				return a_fallback;
+			}
+
+			const std::string& raw = keyIt->second;
+
+			try
+			{
+				if constexpr (std::is_same_v<T, bool>)
+				{
+					if (EqualsIgnoreCase(raw, "true")) { return true; }
+					if (EqualsIgnoreCase(raw, "false")) { return false; }
+
+					return std::stoi(raw) != 0;
+				}
+				else if constexpr (std::is_same_v<T, float>)
+				{
+					return std::stof(raw);
+				}
+				else
+				{
+					return static_cast<T>(std::stoul(raw));
+				}
+			}
+			catch (const std::exception&)
+			{
+				logger::error("Setting \"{}\" has an unparseable value \"{}\"; keeping the current value",
+					a_name, raw);
+
+				return a_fallback;
+			}
+		}
+
+		// Renamed in spirit, kept by name so every caller stays put: this now reads the INI
+		// from disk rather than out of the game's setting collection. See ReadIniFile above for
+		// why the collection cannot be trusted as a read source on a modlist with
+		// PrivateProfileRedirector installed.
 		void ReadFromCollection()
 		{
-			INISettingCollection* c = INISettingCollection::GetSingleton();
+			const IniData c = ReadIniFile();
 
 			{
 				using namespace debug;
-				const auto raw = Read<std::uint32_t>(c, "uLogLevel:Debug", static_cast<std::uint32_t>(logLevel));
+				const auto raw = ReadFromFile<std::uint32_t>(c, "uLogLevel:Debug", static_cast<std::uint32_t>(logLevel));
 
 				logLevel = raw <= static_cast<std::uint32_t>(logger::level::off)
 							   ? static_cast<logger::level>(raw)
@@ -346,21 +529,21 @@ namespace settings
 			{
 				using namespace difficulty;
 
-				enabled = Read<bool>(c, "bEnabled:Difficulty", enabled);
+				enabled = ReadFromFile<bool>(c, "bEnabled:Difficulty", enabled);
 
-				toPCVE = ClampMult(Read<float>(c, "fToPCVE:Difficulty", toPCVE));
-				toPCE = ClampMult(Read<float>(c, "fToPCE:Difficulty", toPCE));
-				toPCN = ClampMult(Read<float>(c, "fToPCN:Difficulty", toPCN));
-				toPCH = ClampMult(Read<float>(c, "fToPCH:Difficulty", toPCH));
-				toPCVH = ClampMult(Read<float>(c, "fToPCVH:Difficulty", toPCVH));
-				toPCL = ClampMult(Read<float>(c, "fToPCL:Difficulty", toPCL));
+				toPCVE = ClampMult(ReadFromFile<float>(c, "fToPCVE:Difficulty", toPCVE));
+				toPCE = ClampMult(ReadFromFile<float>(c, "fToPCE:Difficulty", toPCE));
+				toPCN = ClampMult(ReadFromFile<float>(c, "fToPCN:Difficulty", toPCN));
+				toPCH = ClampMult(ReadFromFile<float>(c, "fToPCH:Difficulty", toPCH));
+				toPCVH = ClampMult(ReadFromFile<float>(c, "fToPCVH:Difficulty", toPCVH));
+				toPCL = ClampMult(ReadFromFile<float>(c, "fToPCL:Difficulty", toPCL));
 
-				byPCVE = ClampMult(Read<float>(c, "fByPCVE:Difficulty", byPCVE));
-				byPCE = ClampMult(Read<float>(c, "fByPCE:Difficulty", byPCE));
-				byPCN = ClampMult(Read<float>(c, "fByPCN:Difficulty", byPCN));
-				byPCH = ClampMult(Read<float>(c, "fByPCH:Difficulty", byPCH));
-				byPCVH = ClampMult(Read<float>(c, "fByPCVH:Difficulty", byPCVH));
-				byPCL = ClampMult(Read<float>(c, "fByPCL:Difficulty", byPCL));
+				byPCVE = ClampMult(ReadFromFile<float>(c, "fByPCVE:Difficulty", byPCVE));
+				byPCE = ClampMult(ReadFromFile<float>(c, "fByPCE:Difficulty", byPCE));
+				byPCN = ClampMult(ReadFromFile<float>(c, "fByPCN:Difficulty", byPCN));
+				byPCH = ClampMult(ReadFromFile<float>(c, "fByPCH:Difficulty", byPCH));
+				byPCVH = ClampMult(ReadFromFile<float>(c, "fByPCVH:Difficulty", byPCVH));
+				byPCL = ClampMult(ReadFromFile<float>(c, "fByPCL:Difficulty", byPCL));
 			}
 		}
 	}
@@ -400,11 +583,10 @@ namespace settings
 			add("fByPCL:Difficulty", byPCL);
 		}
 
-		if (!iniSettingCollection->ReadFromFile(a_iniFileName))
-		{
-			logger::warn("Could not read {}, falling back to default options", a_iniFileName);
-		}
-
+		// The settings stay REGISTERED with the collection above, but their values come from
+		// ReadFromCollection's direct file read below rather than the collection's own
+		// Win32-profile-API read. One read path for startup and reload alike, so the two can
+		// never disagree with each other.
 		ReadFromCollection();
 	}
 
@@ -417,13 +599,11 @@ namespace settings
 			return false;
 		}
 
-		if (!INISettingCollection::GetSingleton()->ReadFromFile(iniFileName))
-		{
-			logger::error("Could not re-read {}; keeping the settings already loaded", iniPath);
-
-			return false;
-		}
-
+		// Deliberately does NOT call INISettingCollection::ReadFromFile any more. That routes
+		// through the game's Win32 profile API, which PrivateProfileRedirector intercepts and
+		// answers from a cache populated at startup - so a reload returned the file as it was
+		// when the game launched, not as we had just written it. ReadFromCollection reads the
+		// file directly instead. See ReadIniFile's comment for the full account.
 		ReadFromCollection();
 
 		logger::info("Reloaded settings from {}", iniPath);
