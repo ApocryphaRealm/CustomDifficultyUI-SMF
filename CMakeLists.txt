@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.21)
+﻿cmake_minimum_required(VERSION 3.21)
 
 ########################################################################################################################
 ## Define project
@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.21)
 
 project(
 	CustomDifficultyUI
-	VERSION 1.0.2
+	VERSION 1.0.1
 	LANGUAGES CXX
 )
 

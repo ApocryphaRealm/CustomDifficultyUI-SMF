@@ -23,9 +23,14 @@ reclaimed), **scratch** (a hypothesis-test build that never held a real number).
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
-## 1.0.2 - 2026-08-27 - untested
+## 1.0.1 - 2026-09-01 - working
 
 ### Fixed
+- The settings menu registers with Apocrypha Menu Framework (AMF) by its real module name,
+  with stock SKSE Menu Framework as the fallback - on an AMF stack the page previously never
+  registered and the menu was silently absent. Same fix as Dragon's Eye Minimap 1.5.8.
+- The .pdb debug symbols now ship inside the main download so Crash Logger can resolve this
+  mod's stack frames. There is no separate Debug Symbols download.
 - "Reload from INI" reported success but applied the pristine shipped values instead of what was just saved. Settings are now read back with plain file I/O (matching how they are written), rather than through the game's Win32 profile API, which PrivateProfileRedirector intercepts and answers from a startup cache. Adds a self-contained INI parser (`ReadIniFile`/`ReadFromFile`) so startup and reload share one read path.
 
 ### Changed
@@ -38,8 +43,7 @@ reclaimed), **scratch** (a hypothesis-test build that never held a real number).
 ### Known
 - This mod is the PRECEDENT for the PrivateProfileRedirector fix used across the project. Its settings reload returned defaults because the read went through the cached Win32 profile API while the write used plain file I/O; reading the INI with plain file I/O resolved it. Source inspection on 2026-08-27 confirms it is the only SMF mod here with zero INISettingCollection::ReadFromFile calls, which is what made the pattern recognisable in the other six.
 
-## 1.0.1 - 2026-08-27 - untested
-
+### Carried from the earlier unreleased 1.0.1 build
 ### Changed
 - local package only - no tag, no commit
 

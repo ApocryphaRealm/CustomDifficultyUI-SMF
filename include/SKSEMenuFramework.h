@@ -6,10 +6,22 @@
 #include <locale>
 #include <string>
 
+// AMF-aware resolution (2026-08-28). This mod prefers Apocrypha Menu Framework - the parallel,
+// independent framework these mods ship with - and falls back to stock SKSE Menu Framework when
+// AMF is absent. AMF is loaded under its OWN module name (never SKSEMenuFramework.dll), so the
+// stock resolution missed it: the SKSEMenuFramework.dll VFS alias that AMF's MO2 plugin creates
+// is deliberately refused at SKSEPlugin_Load and SKSE then unloads it, so GetModuleHandleW on
+// that name returns null. Resolving AMF's real module instead means registration AND the ig*
+// drawing calls both hit the ONE live, initialised instance (the same one that owns the ImGui
+// context), rather than a refused/unloaded alias copy. Editing OUR vendored consumer header to
+// prefer OUR framework touches no SMF binary or source.
 inline HMODULE GetMenuFrameworkModule() {
     static HMODULE menuFramework = nullptr;
     if (!menuFramework) {
-        menuFramework = GetModuleHandleW(L"SKSEMenuFramework");
+        menuFramework = GetModuleHandleW(L"ApocryphaMenuFramework");
+        if (!menuFramework) {
+            menuFramework = GetModuleHandleW(L"SKSEMenuFramework");
+        }
     }
     return menuFramework;
 }
@@ -34,6 +46,13 @@ namespace ImGuiMCP {
 
 namespace SKSEMenuFramework {
     inline bool IsInstalled() {
+        // A framework is present if AMF's real module is loaded (preferred), or stock SMF is
+        // either loaded or on disk. Checking the loaded module - not just the file - is what
+        // makes AMF count: AMF ships as ApocryphaMenuFramework.dll, so the old file-only check
+        // for SKSEMenuFramework.dll never saw it.
+        if (GetMenuFrameworkModule()) {
+            return true;
+        }
         constexpr auto dllPath = "Data/SKSE/Plugins/SKSEMenuFramework.dll";
         return std::filesystem::exists(dllPath);
     }
