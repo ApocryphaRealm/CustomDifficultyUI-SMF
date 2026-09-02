@@ -1,6 +1,7 @@
 #include "Diagnostics.h"
 
 #include "DevBench/DevBenchAPI.h"
+#include "Regeneration.h"
 #include "Settings.h"
 #include "utils/Logger.h"
 
@@ -21,7 +22,16 @@ namespace diagnostics
 			bool lastEnabled = false;
 		};
 
+		struct RegenState
+		{
+			std::uint64_t applyCount = 0;
+			std::optional<clock::time_point> lastApply;
+			bool lastEnabled = false;
+			int lastDifficulty = -1;
+		};
+
 		State state;
+		RegenState regenState;
 
 		std::string SecondsAgoField(const char* a_name, const std::optional<clock::time_point>& a_when)
 		{
@@ -33,6 +43,62 @@ namespace diagnostics
 			const double seconds = std::chrono::duration<double>(clock::now() - *a_when).count();
 
 			return std::format("\"{}SecondsAgo\": {:.1f}", a_name, seconds);
+		}
+
+		// One per-difficulty setting as a JSON array of six numbers, in Novice..Legendary order -
+		// the plain shape a gate script can index straight into (values[0]..values[5]).
+		std::string PerDifficultyField(const char* a_name, const std::array<float, settings::regeneration::kDifficultyCount>& a_values, bool a_resolved)
+		{
+			return std::format(
+				"\"{}\":{{\"resolved\":{},\"values\":[{:.3f},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f}]}}",
+				a_name, a_resolved ? "true" : "false",
+				a_values[0], a_values[1], a_values[2], a_values[3], a_values[4], a_values[5]);
+		}
+
+		std::string GlobalField(const char* a_name, float a_value, bool a_resolved)
+		{
+			return std::format("\"{}\":{{\"resolved\":{},\"value\":{:.3f}}}", a_name, a_resolved ? "true" : "false", a_value);
+		}
+
+		// The full regeneration block: which setting resolved, the six-difficulty (or single)
+		// configured value(s), the currently-ACTIVE difficulty per RE::PlayerCharacter, the
+		// difficulty ApplyLive() last actually used, and when it last ran - everything a gate
+		// needs to prove the point of the feature: that these change when difficulty does.
+		std::string RegenerationJson()
+		{
+			using namespace settings::regeneration;
+			using PDS = Regeneration::PerDifficultySetting;
+			using GS = Regeneration::GlobalSetting;
+
+			const int lastApplied = Regeneration::LastAppliedDifficulty();
+
+			return std::format(
+				"{{"
+				"\"enabled\":{},"
+				"\"lastAppliedDifficulty\":{},"
+				"\"lastAppliedDifficultyName\":\"{}\","
+				"\"perDifficulty\":{{{},{},{},{},{},{},{}}},"
+				"\"global\":{{{},{},{},{},{}}},"
+				"\"lastApply\":{{\"count\":{},\"wasEnabled\":{},{}}}"
+				"}}",
+				enabled ? "true" : "false",
+				lastApplied,
+				Regeneration::DifficultyDisplayName(lastApplied),
+				PerDifficultyField("combatHealthRegenRateMult", combatHealthRegenRateMult, Regeneration::HasResolved(PDS::kCombatHealthRegenRateMult)),
+				PerDifficultyField("combatMagickaRegenRateMult", combatMagickaRegenRateMult, Regeneration::HasResolved(PDS::kCombatMagickaRegenRateMult)),
+				PerDifficultyField("combatStaminaRegenRateMult", combatStaminaRegenRateMult, Regeneration::HasResolved(PDS::kCombatStaminaRegenRateMult)),
+				PerDifficultyField("damagedHealthRegenDelay", damagedHealthRegenDelay, Regeneration::HasResolved(PDS::kDamagedHealthRegenDelay)),
+				PerDifficultyField("damagedMagickaRegenDelay", damagedMagickaRegenDelay, Regeneration::HasResolved(PDS::kDamagedMagickaRegenDelay)),
+				PerDifficultyField("damagedStaminaRegenDelay", damagedStaminaRegenDelay, Regeneration::HasResolved(PDS::kDamagedStaminaRegenDelay)),
+				PerDifficultyField("damagedAVRegenDelay", damagedAVRegenDelay, Regeneration::HasResolved(PDS::kDamagedAVRegenDelay)),
+				GlobalField("healthRegenDelayMax", healthRegenDelayMax, Regeneration::HasResolved(GS::kHealthRegenDelayMax)),
+				GlobalField("magickaRegenDelayMax", magickaRegenDelayMax, Regeneration::HasResolved(GS::kMagickaRegenDelayMax)),
+				GlobalField("staminaRegenDelayMax", staminaRegenDelayMax, Regeneration::HasResolved(GS::kStaminaRegenDelayMax)),
+				GlobalField("outOfBreathStaminaRegenDelay", outOfBreathStaminaRegenDelay, Regeneration::HasResolved(GS::kOutOfBreathStaminaRegenDelay)),
+				GlobalField("essentialDownCombatHealthRegenMult", essentialDownCombatHealthRegenMult, Regeneration::HasResolved(GS::kEssentialDownCombatHealthRegenMult)),
+				regenState.applyCount,
+				regenState.lastEnabled ? "true" : "false",
+				SecondsAgoField("last", regenState.lastApply));
 		}
 
 		void StatusTool(void*, const char*, void* a_sink, DevBenchAPI::WriteFn a_write)
@@ -56,14 +122,16 @@ namespace diagnostics
 					"\"count\":{},"
 					"\"wasEnabled\":{},"
 					"{}"
-					"}}"
+					"}},"
+					"\"regeneration\":{}"
 					"}}",
 					enabled ? "true" : "false",
 					toPCVE, toPCE, toPCN, toPCH, toPCVH, toPCL,
 					byPCVE, byPCE, byPCN, byPCH, byPCVH, byPCL,
 					state.applyCount,
 					state.lastEnabled ? "true" : "false",
-					SecondsAgoField("last", state.lastApply));
+					SecondsAgoField("last", state.lastApply),
+					RegenerationJson());
 			}
 
 			a_write(a_sink, json.c_str());
@@ -123,5 +191,15 @@ namespace diagnostics
 		++state.applyCount;
 		state.lastApply = clock::now();
 		state.lastEnabled = a_enabled;
+	}
+
+	void RecordRegenerationApplied(bool a_enabled, int a_difficulty)
+	{
+		std::scoped_lock lock(mtx);
+
+		++regenState.applyCount;
+		regenState.lastApply = clock::now();
+		regenState.lastEnabled = a_enabled;
+		regenState.lastDifficulty = a_difficulty;
 	}
 }

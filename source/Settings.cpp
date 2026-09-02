@@ -6,6 +6,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <fstream>
 #include <map>
@@ -20,12 +21,68 @@ namespace settings
 	{
 		constexpr const char* kDebugSection = "Debug";
 		constexpr const char* kDifficultySection = "Difficulty";
+		constexpr const char* kRegenSection = "Regeneration";
+
+		// Shared with the difficulty section's own field names above (VE/E/N/H/VH/L) so the two
+		// read the same at a glance in the INI.
+		constexpr std::array<const char*, regeneration::kDifficultyCount> kDifficultySuffix = {
+			"VE", "E", "N", "H", "VH", "L"
+		};
+
+		// One entry per per-difficulty regeneration setting: the base INI key name (the suffix
+		// above is appended per difficulty) and a pointer to its six-slot storage in Settings.h.
+		// Declared here, not in Regeneration.cpp, because Regeneration.cpp's own table exists for
+		// a different job (resolving and applying real GameSettings) - this one exists only to
+		// keep Init()/ReadFromCollection()/Save() from repeating each of the 42 keys by hand.
+		struct RegenPerDifficultyField
+		{
+			const char* baseName;
+			std::array<float, regeneration::kDifficultyCount>* values;
+		};
+
+		std::array<RegenPerDifficultyField, 7> kRegenPerDifficultyFields = { {
+			{ "fCombatHealthRegenRateMult", &regeneration::combatHealthRegenRateMult },
+			{ "fCombatMagickaRegenRateMult", &regeneration::combatMagickaRegenRateMult },
+			{ "fCombatStaminaRegenRateMult", &regeneration::combatStaminaRegenRateMult },
+			{ "fDamagedHealthRegenDelay", &regeneration::damagedHealthRegenDelay },
+			{ "fDamagedMagickaRegenDelay", &regeneration::damagedMagickaRegenDelay },
+			{ "fDamagedStaminaRegenDelay", &regeneration::damagedStaminaRegenDelay },
+			{ "fDamagedAVRegenDelay", &regeneration::damagedAVRegenDelay },
+		} };
+
+		struct RegenGlobalField
+		{
+			const char* name;
+			float* value;
+		};
+
+		std::array<RegenGlobalField, 5> kRegenGlobalFields = { {
+			{ "fHealthRegenDelayMax", &regeneration::healthRegenDelayMax },
+			{ "fMagickaRegenDelayMax", &regeneration::magickaRegenDelayMax },
+			{ "fStaminaRegenDelayMax", &regeneration::staminaRegenDelayMax },
+			{ "fOutOfBreathStaminaRegenDelay", &regeneration::outOfBreathStaminaRegenDelay },
+			{ "fEssentialDownCombatHealthRegenMult", &regeneration::essentialDownCombatHealthRegenMult },
+		} };
+
+		// A hand-edited negative value would otherwise be indistinguishable from
+		// regeneration::kUnset (the "never saved, seed me from live vanilla" sentinel) once read
+		// back from the file - clamped to 0 instead, which is a real, valid "no regen"/"no delay"
+		// value that can never collide with the sentinel.
+		float ClampRegen(float a_value)
+		{
+			return a_value < 0.0F ? 0.0F : a_value;
+		}
 
 		std::string iniPath;
 		std::string iniFileName;
 
 		// The values the plugin compiles in, captured before the INI is read so that
-		// "Restore defaults" means "what you would get with no INI at all".
+		// "Restore defaults" means "what you would get with no INI at all". Regeneration's own
+		// float settings are NOT here - there is no compiled-in default for them the way there is
+		// for difficulty's twelve (see Settings.h), so their restore path is
+		// Regeneration::RestoreDefaults() instead, sourced from the real vanilla value captured
+		// live at Regeneration::Init(). Only the enabled toggle has a real compile-time default
+		// (false), so only it is captured here.
 		struct Defaults
 		{
 			logger::level logLevel;
@@ -33,6 +90,8 @@ namespace settings
 			bool enabled;
 			float toPCVE, toPCE, toPCN, toPCH, toPCVH, toPCL;
 			float byPCVE, byPCE, byPCN, byPCH, byPCVH, byPCL;
+
+			bool regenEnabled;
 		};
 
 		Defaults defaults;
@@ -48,6 +107,8 @@ namespace settings
 			defaults.toPCH = toPCH; defaults.toPCVH = toPCVH; defaults.toPCL = toPCL;
 			defaults.byPCVE = byPCVE; defaults.byPCE = byPCE; defaults.byPCN = byPCN;
 			defaults.byPCH = byPCH; defaults.byPCVH = byPCVH; defaults.byPCL = byPCL;
+
+			defaults.regenEnabled = regeneration::enabled;
 		}
 
 		// One key a Save() is about to write. Queued rather than written on the spot so the
@@ -545,6 +606,33 @@ namespace settings
 				byPCVH = ClampMult(ReadFromFile<float>(c, "fByPCVH:Difficulty", byPCVH));
 				byPCL = ClampMult(ReadFromFile<float>(c, "fByPCL:Difficulty", byPCL));
 			}
+
+			{
+				using namespace regeneration;
+
+				enabled = ReadFromFile<bool>(c, "bEnabled:Regeneration", enabled);
+
+				// A value still equal to kUnset after this (nothing was ever saved for it) is
+				// left exactly as kUnset - Regeneration::Init() is what seeds it from the real
+				// live vanilla value, since no compile-time default exists for these settings.
+				for (RegenPerDifficultyField& field : kRegenPerDifficultyFields)
+				{
+					for (std::size_t i = 0; i < kDifficultyCount; ++i)
+					{
+						const std::string key = std::string(field.baseName) + kDifficultySuffix[i] + ":Regeneration";
+						float& slot = (*field.values)[i];
+						const float raw = ReadFromFile<float>(c, key.c_str(), slot);
+						slot = (raw == kUnset) ? kUnset : ClampRegen(raw);
+					}
+				}
+
+				for (RegenGlobalField& field : kRegenGlobalFields)
+				{
+					const std::string key = std::string(field.name) + ":Regeneration";
+					const float raw = ReadFromFile<float>(c, key.c_str(), *field.value);
+					*field.value = (raw == kUnset) ? kUnset : ClampRegen(raw);
+				}
+			}
 		}
 	}
 
@@ -581,6 +669,24 @@ namespace settings
 			add("fByPCH:Difficulty", byPCH);
 			add("fByPCVH:Difficulty", byPCVH);
 			add("fByPCL:Difficulty", byPCL);
+		}
+
+		{
+			using namespace regeneration;
+			add("bEnabled:Regeneration", enabled);
+
+			for (RegenPerDifficultyField& field : kRegenPerDifficultyFields)
+			{
+				for (std::size_t i = 0; i < kDifficultyCount; ++i)
+				{
+					add((std::string(field.baseName) + kDifficultySuffix[i] + ":Regeneration").c_str(), (*field.values)[i]);
+				}
+			}
+
+			for (RegenGlobalField& field : kRegenGlobalFields)
+			{
+				add((std::string(field.name) + ":Regeneration").c_str(), *field.value);
+			}
 		}
 
 		// The settings stay REGISTERED with the collection above, but their values come from
@@ -641,6 +747,24 @@ namespace settings
 		ok &= WriteFloat(kDifficultySection, "fByPCVH", byPCVH);
 		ok &= WriteFloat(kDifficultySection, "fByPCL", byPCL);
 
+		// Qualified explicitly rather than another "using namespace regeneration" - that would
+		// make "enabled" ambiguous against difficulty::enabled, still in scope from above.
+		ok &= WriteBool(kRegenSection, "bEnabled", regeneration::enabled);
+
+		for (RegenPerDifficultyField& field : kRegenPerDifficultyFields)
+		{
+			for (std::size_t i = 0; i < regeneration::kDifficultyCount; ++i)
+			{
+				const std::string key = std::string(field.baseName) + kDifficultySuffix[i];
+				ok &= WriteFloat(kRegenSection, key.c_str(), (*field.values)[i]);
+			}
+		}
+
+		for (RegenGlobalField& field : kRegenGlobalFields)
+		{
+			ok &= WriteFloat(kRegenSection, field.name, *field.value);
+		}
+
 		ok &= FlushPendingWrites();
 
 		pendingWrites.clear();
@@ -668,6 +792,13 @@ namespace settings
 		toPCH = defaults.toPCH; toPCVH = defaults.toPCVH; toPCL = defaults.toPCL;
 		byPCVE = defaults.byPCVE; byPCE = defaults.byPCE; byPCN = defaults.byPCN;
 		byPCH = defaults.byPCH; byPCVH = defaults.byPCVH; byPCL = defaults.byPCL;
+
+		// The regeneration FLOAT settings are deliberately NOT reset here - there is no
+		// compile-time default for them (see the Defaults struct's own comment above), so their
+		// restore path is Regeneration::RestoreDefaults(), sourced from the real vanilla value
+		// captured live at Regeneration::Init(). Call it alongside this function, matching
+		// UI.cpp's "Restore defaults" button.
+		regeneration::enabled = defaults.regenEnabled;
 	}
 
 	const std::string& GetIniPath() { return iniPath; }

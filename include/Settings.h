@@ -1,5 +1,8 @@
 #pragma once
 
+#include <array>
+#include <cstddef>
+
 namespace SKSE::log
 {
 	using level = spdlog::level::level_enum;
@@ -62,5 +65,49 @@ namespace settings
 		inline float byPCH = 0.75F;
 		inline float byPCVH = 0.50F;
 		inline float byPCL = 0.25F;
+	}
+
+	// Regeneration control, added 2026-09-02 per plan
+	// "4. plans\custom-difficulty-ui-regeneration\plan.md". Unlike difficulty above, vanilla has
+	// no per-difficulty regeneration at all - each setting below is ONE real GameSetting, not
+	// six - so there is no Papyrus source to read real vanilla numbers from. Instead every value
+	// here starts at kUnset (a negative sentinel no real rate/delay/multiplier can legitimately
+	// hold) and Regeneration::Init() overwrites it with whatever the RUNNING GAME reports the
+	// first time this mod ever loads, before anything is ever applied. A value already read from
+	// the INI (a real number, not the sentinel) is left alone. See Regeneration.h/.cpp for the
+	// per-difficulty switching and the vanilla-restore path.
+	namespace regeneration
+	{
+		// Negative because every setting below is a rate, delay or multiplier and vanilla never
+		// uses a negative one - so this can never be confused with a real saved value.
+		inline constexpr float kUnset = -1.0F;
+
+		// Index 0..5 = Novice/Apprentice/Adept/Expert/Master/Legendary, matching
+		// RE::PlayerCharacter::GetGameStatsData().difficulty. See Regeneration.h.
+		inline constexpr std::size_t kDifficultyCount = 6;
+
+		// Off by default - matches the difficulty half's own convention. Off restores every
+		// GameSetting below to the real value captured at Init(), not just "stop touching them."
+		inline bool enabled = false;
+
+		// PER-DIFFICULTY (the point of this feature): one stored value per difficulty for each
+		// of these seven settings; whichever slot matches the CURRENT difficulty is the one
+		// written into the game's one real GameSetting of that name.
+		inline std::array<float, kDifficultyCount> combatHealthRegenRateMult{ kUnset, kUnset, kUnset, kUnset, kUnset, kUnset };
+		inline std::array<float, kDifficultyCount> combatMagickaRegenRateMult{ kUnset, kUnset, kUnset, kUnset, kUnset, kUnset };
+		inline std::array<float, kDifficultyCount> combatStaminaRegenRateMult{ kUnset, kUnset, kUnset, kUnset, kUnset, kUnset };
+		inline std::array<float, kDifficultyCount> damagedHealthRegenDelay{ kUnset, kUnset, kUnset, kUnset, kUnset, kUnset };
+		inline std::array<float, kDifficultyCount> damagedMagickaRegenDelay{ kUnset, kUnset, kUnset, kUnset, kUnset, kUnset };
+		inline std::array<float, kDifficultyCount> damagedStaminaRegenDelay{ kUnset, kUnset, kUnset, kUnset, kUnset, kUnset };
+		inline std::array<float, kDifficultyCount> damagedAVRegenDelay{ kUnset, kUnset, kUnset, kUnset, kUnset, kUnset };
+
+		// NOT per-difficulty (design decision in the plan): the three ceilings only matter once
+		// a delay above has been raised past them, and the two situational values are edge cases
+		// rather than the reason this feature exists. One value each, for every difficulty.
+		inline float healthRegenDelayMax = kUnset;
+		inline float magickaRegenDelayMax = kUnset;
+		inline float staminaRegenDelayMax = kUnset;
+		inline float outOfBreathStaminaRegenDelay = kUnset;
+		inline float essentialDownCombatHealthRegenMult = kUnset;
 	}
 }

@@ -23,6 +23,22 @@ reclaimed), **scratch** (a hypothesis-test build that never held a real number).
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
+## 1.0.2 - 2026-09-02 - working
+
+### Added
+- Per-difficulty stamina, health and magicka regeneration control. Vanilla ties regeneration
+  to one global setting regardless of difficulty; this mod stores a separate value for each of
+  the six difficulties and switches which one is live whenever the player's difficulty changes,
+  with no visit to the settings page required. Covers seven per-difficulty settings (combat
+  health/magicka/stamina regen rate, and the four damaged-regen delays) plus five settings that
+  stay global across all difficulties (the three regen delay ceilings, out-of-breath stamina
+  delay, and essential-down combat health regen). A new "Regeneration" page holds the toggle,
+  per-difficulty sliders grouped by category, and copy-to-all / copy-from-difficulty buttons.
+  Off by default; enabling it is opt-in.
+- Confirmed end to end with a live-engine read, independent of the mod's own bookkeeping:
+  setting different values on two difficulties and switching between them shows the resolved
+  GameSetting itself following the change, in both directions.
+
 ## 1.0.1 - 2026-09-01 - working
 
 ### Fixed

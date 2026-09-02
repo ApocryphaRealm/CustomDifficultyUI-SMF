@@ -15,4 +15,8 @@ namespace diagnostics
 	// The twelve GameSettings were actually (re-)applied - a_enabled says whether they were
 	// applied at their configured values or reset to vanilla defaults.
 	void RecordApplied(bool a_enabled);
+
+	// The regeneration settings were actually (re-)applied - a_enabled says whether they were
+	// applied at the configured values for a_difficulty, or reset to vanilla defaults.
+	void RecordRegenerationApplied(bool a_enabled, int a_difficulty);
 }
