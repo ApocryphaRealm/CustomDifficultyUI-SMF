@@ -1,10 +1,12 @@
-# Custom Difficulty UI - SMF Settings
+# Custom Difficulty UI
 
-**Version 1.0.0.** A fresh, native C++ implementation of **Custom Difficulty UI** (Nexus
-skyrimspecialedition/mods/14362) with a real SKSE Menu Framework settings page. This isn't a
-port of a compiled DLL - the original mod has no SKSE plugin at all, only a SkyUI MCM (Papyrus +
-ESP) - so there is no existing C++ project to fork; this is a fresh CommonLibSSE-NG project that
-mirrors the original's own real settings surface 1:1.
+**Version 1.0.2.** A fresh, native C++ implementation of **Custom Difficulty UI** (Nexus
+skyrimspecialedition/mods/14362) with a real in-game settings page, registering with
+**Apocrypha Menu Framework (AMF)** by its real module name and falling back to stock SKSE Menu
+Framework where AMF is not installed. This isn't a port of a compiled DLL - the original mod has
+no SKSE plugin at all, only a SkyUI MCM (Papyrus + ESP) - so there is no existing C++ project to
+fork; this is a fresh CommonLibSSE-NG project that mirrors the original's own real settings
+surface 1:1, then goes beyond it with per-difficulty regeneration control the original never had.
 
 **Licence: MIT.** Original code, written from scratch for this project - see `LICENSE`.
 
@@ -44,10 +46,36 @@ twelve vanilla GameSettings this build writes to
 the vanilla-default table above comes from - upstream's own real reset values, not guessed.
 
 This build reimplements the same mechanic in native C++ against
-`RE::GameSettingCollection`/`RE::Setting` rather than Papyrus, with a real SMF settings page in
-place of the original's SkyUI MCM. Game mechanics (and the vanilla GameSetting names/values
-themselves) aren't copyrightable, so this carries no licensing entanglement with the original
-mod - only its own Papyrus/ESP implementation would be, and none of that was copied.
+`RE::GameSettingCollection`/`RE::Setting` rather than Papyrus, with a real settings page (through
+AMF, the SMF-compatible menu framework this project builds and maintains) in place of the
+original's SkyUI MCM. Game mechanics (and the vanilla GameSetting names/values themselves) aren't
+copyrightable, so this carries no licensing entanglement with the original mod - only its own
+Papyrus/ESP implementation would be, and none of that was copied.
+
+## Regeneration - per-difficulty, added in 1.0.2
+
+Vanilla has no per-difficulty regeneration at all - `fCombatHealthRegenRateMult` and its eleven
+siblings (see `4. plans\custom-difficulty-ui-regeneration\plan.md` for the full design) are each
+ONE real GameSetting, global to every difficulty. This build adds the per-difficulty behaviour
+itself: a value is stored for each of the six difficulties, and whichever one matches the CURRENT
+difficulty is written into the game's one real GameSetting - so switching difficulty in the
+game's own Settings menu changes the applied regeneration values live, with no visit to this
+mod's page. Detected event-driven, via a `RE::MenuOpenCloseEvent` sink that re-checks on every
+menu close and re-applies only if difficulty actually moved - no polling.
+
+Twelve settings: three combat regen rate multipliers and four damaged-regen delays, stored per
+difficulty; three delay ceilings plus two situational settings (out-of-breath stamina delay,
+downed-essential health regen), stored once, global to every difficulty. Every setting name is
+resolved and verified against the running game at load - a name that does not exist on this
+runtime is skipped and its control does not appear, rather than writing blind. Vanilla defaults
+are captured LIVE from the running game the first time this mod ever loads, since - unlike the
+twelve damage settings above - there is no Papyrus source to read a compiled default from.
+
+Proven end to end against the live engine, not just this mod's own bookkeeping: see
+`.MD\scripts\devbench-loops\cdui-regeneration-gate.ps1`, which sets two difficulties to different
+values, switches between them via `customdifficulty.control`, and reads the resolved
+`RE::Setting*` back directly - independent proof the switch reaches the engine, in both
+directions.
 
 ## The API (small, and already vanilla-documented)
 
