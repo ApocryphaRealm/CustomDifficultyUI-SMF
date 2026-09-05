@@ -394,7 +394,7 @@ namespace settings
 		// here instead, where the message can say which setting is at fault.
 		void AddChecked(INISettingCollection* a_collection, RE::Setting* a_setting, const char* a_name)
 		{
-			if (a_setting && a_setting->name)
+			if (a_setting && a_setting->GetName())
 			{
 				a_collection->AddSettings(a_setting);
 

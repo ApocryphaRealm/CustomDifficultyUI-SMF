@@ -52,7 +52,11 @@ namespace utils
 		template <>
 		std::int32_t GetSetting<std::int32_t>(const char* a_name) const
 		{
+#if RUNTIME_LINE == 17
+			return GetSetting(a_name)->GetInteger();
+#else
 			return GetSetting(a_name)->GetSInt();
+#endif
 		}
 		template <>
 		RE::Color GetSetting<RE::Color>(const char* a_name) const
@@ -67,7 +71,11 @@ namespace utils
 		template <>
 		std::uint32_t GetSetting<std::uint32_t>(const char* a_name) const
 		{
+#if RUNTIME_LINE == 17
+			return GetSetting(a_name)->GetUnsignedInteger();
+#else
 			return GetSetting(a_name)->GetUInt();
+#endif
 		}
 
 		bool ReadFromFile(std::string_view a_fileName);

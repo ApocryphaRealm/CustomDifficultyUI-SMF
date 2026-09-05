@@ -267,6 +267,12 @@ namespace Regeneration
 	{
 		const int difficulty = CurrentDifficulty();
 
+		// Unconditional trace: without this there is no record of what the engine actually
+		// reported at each menu close, which left a difficulty-reverting report undiagnosable.
+		logger::trace("Regeneration::CheckAndApplyIfChanged: menu closed; engine difficulty is "
+					  "{} ({}), last applied {}",
+			difficulty, kDifficultyNames[difficulty], g_lastAppliedDifficulty);
+
 		if (difficulty != g_lastAppliedDifficulty)
 		{
 			logger::info("Regeneration::CheckAndApplyIfChanged: difficulty changed {} -> {} ({}); re-applying",

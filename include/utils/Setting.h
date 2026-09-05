@@ -55,7 +55,11 @@ namespace utils
 				} 
 				else if constexpr (std::is_same_v<T, int>) 
 				{
-					if (GetType() == Type::kSignedInteger) 
+#if RUNTIME_LINE == 17
+					if (GetType() == Type::kInteger)
+#else
+					if (GetType() == Type::kSignedInteger)
+#endif
 					{
 						data.i = a_data;
 
