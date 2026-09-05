@@ -23,6 +23,12 @@ reclaimed), **scratch** (a hypothesis-test build that never held a real number).
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
+## 1.0.4 - 2026-09-05 - working
+
+### Fixed
+- Confirmed in game that the settings survive a save load: the values live in the INI and are re-applied on every save load (the log shows the Adept regeneration value written again after the load), so the original mod's known issue does not apply to this port.
+- The explanatory lines on the settings page (the difficulty-section notes, the current-difficulty line, the delay-ceiling note and the not-available notes) are drawn in normal text instead of the near-invisible disabled grey.
+
 ## 1.0.3 - 2026-09-05 - untested
 
 ### Added

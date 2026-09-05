@@ -1,6 +1,6 @@
 ﻿{
   "name": "custom-difficulty-ui-smf-17",
-  "version-string": "1.0.3",
+  "version-string": "1.0.4",
   "description": "A fresh, native C++ implementation of the same idea as Custom Difficulty UI (Nexus 14362) - per-difficulty-level damage multipliers (damage to the player, damage by the player), plus per-difficulty regeneration control the original never had - with a real Apocrypha Menu Framework (AMF) settings page, ported from its original SkyUI MCM. No upstream source to fork (Papyrus/MCM only, no compiled plugin). [Skyrim 1.7.x build line: CommonLibSSE-NG 7.2.0, cmake/ports-17]",
   "homepage": "https://github.com/ApocryphaRealm/CustomDifficultyUI-SMF",
   "license": "MIT",

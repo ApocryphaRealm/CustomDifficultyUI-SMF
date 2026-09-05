@@ -176,7 +176,7 @@ namespace UI
 		{
 			if (!a_resolved)
 			{
-				ImGuiMCP::TextDisabled("%s (%s) - not available on this build; the GameSetting "
+				ImGuiMCP::TextWrapped("%s (%s) - not available on this build; the GameSetting "
 										"could not be found", a_label, a_rawName);
 
 				return false;
@@ -194,7 +194,7 @@ namespace UI
 		{
 			if (!a_resolved)
 			{
-				ImGuiMCP::TextDisabled("%s (%s) - not available on this build; the GameSetting "
+				ImGuiMCP::TextWrapped("%s (%s) - not available on this build; the GameSetting "
 										"could not be found", a_label, a_rawName);
 
 				return false;
@@ -236,8 +236,8 @@ namespace UI
 			HelpMarker("Off resets every multiplier below to Skyrim's own real vanilla defaults - "
 					   "not just \"stop touching them.\"");
 			ImGuiMCP::Spacing();
-			ImGuiMCP::TextDisabled("Each section below is one of Skyrim's own difficulty levels.");
-			ImGuiMCP::TextDisabled("Whichever difficulty you select in game uses that section's sliders.");
+			ImGuiMCP::TextWrapped("Each section below is one of Skyrim's own difficulty levels.");
+			ImGuiMCP::TextWrapped("Whichever difficulty you select in game uses that section's sliders.");
 			ImGuiMCP::Spacing();
 
 			// Headed with the names the GAME shows in its own difficulty menu, not the internal
@@ -317,7 +317,7 @@ namespace UI
 			}
 			else
 			{
-				ImGuiMCP::TextDisabled("Current difficulty: not applied yet.");
+				ImGuiMCP::TextWrapped("Current difficulty: not applied yet.");
 			}
 
 			ImGuiMCP::Spacing();
@@ -407,7 +407,7 @@ namespace UI
 			}
 
 			ImGuiMCP::Spacing();
-			ImGuiMCP::TextDisabled("Delay ceilings - one value, every difficulty (the plan: these "
+			ImGuiMCP::TextWrapped("Delay ceilings - one value, every difficulty (the plan: these "
 									"only matter once a delay above is raised past them):");
 			if (RenderGlobalSlider("Health delay ceiling (s)", "fHealthRegenDelayMax",
 					&healthRegenDelayMax, 0.0F, 300.0F, "%.1f", 1.0F,

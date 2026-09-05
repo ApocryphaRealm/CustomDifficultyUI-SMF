@@ -1,6 +1,8 @@
 # Custom Difficulty UI
 
-**Version 1.0.2.** A fresh, native C++ implementation of **Custom Difficulty UI** (Nexus
+Version 1.0.4
+
+**Version 1.0.4.** A fresh, native C++ implementation of **Custom Difficulty UI** (Nexus
 skyrimspecialedition/mods/14362) with a real in-game settings page, registering with
 **Apocrypha Menu Framework (AMF)** by its real module name and falling back to stock SKSE Menu
 Framework where AMF is not installed. This isn't a port of a compiled DLL - the original mod has
@@ -116,3 +118,13 @@ the CMake and Ninja it ships with are located automatically by `find-msvc.bat`. 
 
 Built - see this project's own `PROGRESS.md` for the current state (packaging/install/test
 status).
+
+## What changed
+
+Version 1.0.4
+Drawn the explanatory lines on the settings page in normal text instead of the near-invisible disabled grey.
+Confirmed in game that the settings survive a save load: the values live in the INI and are re-applied on every save load.
+Version 1.0.3
+Added a Skyrim 1.7.99 / 1.7.104 build; the mod installs as a FOMOD that picks the build for your game version.
+Version 1.0.2
+Added a Regeneration page with per-difficulty regeneration control that follows the game's own difficulty setting live.
