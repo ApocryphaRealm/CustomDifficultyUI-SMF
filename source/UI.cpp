@@ -7,12 +7,15 @@
 #include "Settings.h"
 
 #include "utils/Logger.h"
+#include "utils/Strings.h"
 #include "utils/Toggle.h"
 
 #include <algorithm>
 #include <format>
 #include <array>
+#include <cstdio>
 #include <string>
+#include <vector>
 
 namespace UI
 {
@@ -23,8 +26,11 @@ namespace UI
 		// The slider the arrow keys currently drive. Set by clicking one.
 		std::string selectedSlider;
 
-		constexpr const char* kLogLevelNames[] = { "Trace", "Debug", "Info", "Warning", "Error", "Critical", "Off" };
+		// The log-level list is a parallel key/label pair: the key array names the translation
+		// key, the label array holds the compiled English. ComboTR() below pairs them by index.
 		constexpr int kLogLevelCount = 7;
+		constexpr const char* const kLogLevelKeys[] = { "CDUI_Log_Trace", "CDUI_Log_Debug", "CDUI_Log_Info", "CDUI_Log_Warning", "CDUI_Log_Error", "CDUI_Log_Critical", "CDUI_Log_Off" };
+		constexpr const char* const kLogLevelLabels[] = { "Trace", "Debug", "Info", "Warning", "Error", "Critical", "Off" };
 
 		// The framework renders from the renderer's present hook, which is not the thread the
 		// game's own systems expect to be talked to from - anything beyond touching this
@@ -126,7 +132,7 @@ namespace UI
 				}
 
 				ImGuiMCP::SameLine();
-				ImGuiMCP::TextDisabled("<-->");
+				ImGuiMCP::TextDisabled("%s", strings::TR("CDUI_NudgeMark", "<-->"));
 			}
 
 			return changed;
@@ -135,7 +141,7 @@ namespace UI
 		void HelpMarker(const char* a_description)
 		{
 			ImGuiMCP::SameLine();
-			ImGuiMCP::TextDisabled("(?)");
+			ImGuiMCP::TextDisabled("%s", strings::TR("CDUI_HelpMark", "(?)"));
 
 			if (ImGuiMCP::IsItemHovered())
 			{
@@ -179,8 +185,7 @@ namespace UI
 		{
 			if (!a_resolved)
 			{
-				ImGuiMCP::TextWrapped("%s (%s) - not available on this build; the GameSetting "
-										"could not be found", a_label, a_rawName);
+				ImGuiMCP::TextWrapped(strings::TR("CDUI_NotAvailable", "%s (%s) - not available on this build; the GameSetting could not be found"), a_label, a_rawName);
 
 				return false;
 			}
@@ -197,8 +202,7 @@ namespace UI
 		{
 			if (!a_resolved)
 			{
-				ImGuiMCP::TextWrapped("%s (%s) - not available on this build; the GameSetting "
-										"could not be found", a_label, a_rawName);
+				ImGuiMCP::TextWrapped(strings::TR("CDUI_NotAvailable", "%s (%s) - not available on this build; the GameSetting could not be found"), a_label, a_rawName);
 
 				return false;
 			}
@@ -208,31 +212,61 @@ namespace UI
 			return NudgeableSlider(labelWithName.c_str(), a_value, a_min, a_max, a_format, a_step);
 		}
 
-		constexpr const char* const kDifficultyNames[] = { "Novice", "Apprentice", "Adept", "Expert", "Master", "Legendary" };
+		// Skyrim's own six difficulty names, as the game shows them. Key array + label array, the
+		// same shape as the log levels above; Regeneration::DifficultyDisplayName() stays English
+		// because that one feeds the log and DevBench's JSON, not the page.
+		constexpr const char* const kDifficultyKeys[] = { "CDUI_Diff_Novice", "CDUI_Diff_Apprentice", "CDUI_Diff_Adept", "CDUI_Diff_Expert", "CDUI_Diff_Master", "CDUI_Diff_Legendary" };
+		constexpr const char* const kDifficultyLabels[] = { "Novice", "Apprentice", "Adept", "Expert", "Master", "Legendary" };
 		constexpr int kDifficultyCount = 6;
+
+		// A difficulty name as the player reads it, in the active language.
+		const char* DifficultyText(int a_index)
+		{
+			return (a_index >= 0 && a_index < kDifficultyCount) ? strings::TR(kDifficultyKeys[a_index], kDifficultyLabels[a_index])
+																 : "";
+		}
+
+		// A Combo whose option list is rebuilt from TR'd entries every frame (plan 2.2): store
+		// owns the translated bytes for the duration of the call, so the pointers stay valid.
+		bool ComboTR(const char* a_label, int* a_current,
+					 const char* const* a_keys, const char* const* a_labels, int a_count)
+		{
+			std::vector<std::string> store;
+			store.reserve(static_cast<std::size_t>(a_count));
+			for (int i = 0; i < a_count; ++i) { store.emplace_back(strings::TR(a_keys[i], a_labels[i])); }
+			std::vector<const char*> items;
+			items.reserve(store.size());
+			for (const auto& s : store) { items.push_back(s.c_str()); }
+			return ImGuiMCP::Combo(a_label, a_current, items.data(), a_count);
+		}
 
 		// One difficulty's pair. The loaded value (what this game holds at data load - vanilla, or the
 		// overhaul's number) sits under each pair so an overhaul can be tuned without losing its numbers.
-		void RenderDifficultyLevel(int a_difficulty, const char* a_header, const char* a_toPCLabel, float* a_toPC,
-			const char* a_byPCLabel, float* a_byPC)
+		// a_header and the two labels arrive ALREADY translated (the keys are at the call site);
+		// a_suffix is the ImGui id disambiguator and is never part of the translated text.
+		void RenderDifficultyLevel(int a_difficulty, const char* a_header, const char* a_suffix,
+			const char* a_toPCLabel, float* a_toPC, const char* a_byPCLabel, float* a_byPC)
 		{
 			ImGuiMCP::SeparatorText(a_header);
 
-			if (NudgeableSlider(a_toPCLabel, a_toPC, 0.0F, 999.0F, "%.2f", 0.01F))
-			{
-				ApplyLive();
-			}
-			HelpMarker("Damage multiplier applied to hits enemies land on you at this difficulty. Ctrl+click to type a value.");
+			const std::string toLabel = std::string(a_toPCLabel) + a_suffix;
+			const std::string byLabel = std::string(a_byPCLabel) + a_suffix;
 
-			if (NudgeableSlider(a_byPCLabel, a_byPC, 0.0F, 999.0F, "%.2f", 0.01F))
+			if (NudgeableSlider(toLabel.c_str(), a_toPC, 0.0F, 999.0F, "%.2f", 0.01F))
 			{
 				ApplyLive();
 			}
-			HelpMarker("Damage multiplier applied to hits you land on enemies at this difficulty. Ctrl+click to type a value.");
+			HelpMarker(strings::TR("CDUI_HelpToYou", "Damage multiplier applied to hits enemies land on you at this difficulty. Ctrl+click to type a value."));
+
+			if (NudgeableSlider(byLabel.c_str(), a_byPC, 0.0F, 999.0F, "%.2f", 0.01F))
+			{
+				ApplyLive();
+			}
+			HelpMarker(strings::TR("CDUI_HelpByYou", "Damage multiplier applied to hits you land on enemies at this difficulty. Ctrl+click to type a value."));
 
 			const auto to = static_cast<Difficulty::Setting>(a_difficulty);
 			const auto by = static_cast<Difficulty::Setting>(6 + a_difficulty);
-			ImGuiMCP::TextDisabled("    loaded with: x%.2f to you, x%.2f by you", Difficulty::LoadedValue(to), Difficulty::LoadedValue(by));
+			ImGuiMCP::TextDisabled(strings::TR("CDUI_LoadedWith", "    loaded with: x%.2f to you, x%.2f by you"), Difficulty::LoadedValue(to), Difficulty::LoadedValue(by));
 		}
 
 		void RenderDifficultySection()
@@ -246,117 +280,115 @@ namespace UI
 			const std::string overhaul = Difficulty::OverhaulLoaded();
 			if (!overhaul.empty())
 			{
-				ImGuiMCP::TextWrapped("%s is loaded. Its damage multipliers are the loaded values shown under each pair; nothing "
-									  "here touches them until Enabled is on - then this mod writes last and supersedes them.",
+				ImGuiMCP::TextWrapped(strings::TR("CDUI_OverhaulLoaded", "%s is loaded. Its damage multipliers are the loaded values shown under each pair; nothing here touches them until Enabled is on - then this mod writes last and supersedes them."),
 									  overhaul.c_str());
 				bool bbFound = false;
 				const bool bbScaling = Difficulty::BladeAndBluntLevelScaling(bbFound);
 				if (Difficulty::BladeAndBluntPresent())
 				{
-					if (bbScaling) { ImGuiMCP::TextWrapped("BladeAndBlunt.ini has bLevelBasedDifficulty = true: its DLL steps the multipliers at levels 10 to 50 as well. Set it to false while this mod is enabled - two writers on one value is never stable. Difficulty by level below does the same job."); }
-					else if (!bbFound) { ImGuiMCP::TextWrapped("BladeAndBlunt.ini was not found, so its bLevelBasedDifficulty could not be read. If it is true, set it to false while this mod is enabled."); }
+					if (bbScaling) { ImGuiMCP::TextWrapped("%s", strings::TR("CDUI_BBScaling", "BladeAndBlunt.ini has bLevelBasedDifficulty = true: its DLL steps the multipliers at levels 10 to 50 as well. Set it to false while this mod is enabled - two writers on one value is never stable. Difficulty by level below does the same job.")); }
+					else if (!bbFound) { ImGuiMCP::TextWrapped("%s", strings::TR("CDUI_BBNotFound", "BladeAndBlunt.ini was not found, so its bLevelBasedDifficulty could not be read. If it is true, set it to false while this mod is enabled.")); }
 				}
 				ImGuiMCP::Spacing();
 			}
 
-			if (ImGuiMCP::Toggle("Enabled", &enabled))
+			if (ImGuiMCP::Toggle(strings::TR("CDUI_Enabled", "Enabled"), &enabled))
 			{
 				ApplyLive();
 			}
-			HelpMarker("Off writes nothing: the multipliers your game loaded with (vanilla, or an overhaul's) stay exactly "
-					   "as they are, and switching off hands them back. On: the pairs below are written, and the game "
-					   "reads the pair for the difficulty you play on.");
+			HelpMarker(strings::TR("CDUI_HelpEnabled", "Off writes nothing: the multipliers your game loaded with (vanilla, or an overhaul's) stay exactly as they are, and switching off hands them back. On: the pairs below are written, and the game reads the pair for the difficulty you play on."));
 			ImGuiMCP::Spacing();
 
-			if (ImGuiMCP::Toggle("One pair for every difficulty", &sharedPair))
+			if (ImGuiMCP::Toggle(strings::TR("CDUI_SharedPair", "One pair for every difficulty"), &sharedPair))
 			{
 				ApplyLive();
 			}
-			HelpMarker("On: the single pair below is written for all six difficulties, so the game's difficulty setting "
-					   "makes no difference to damage. Off: each difficulty has its own pair.");
+			HelpMarker(strings::TR("CDUI_HelpSharedPair", "On: the single pair below is written for all six difficulties, so the game's difficulty setting makes no difference to damage. Off: each difficulty has its own pair."));
 
 			if (sharedPair)
 			{
-				if (NudgeableSlider("Damage to you##shared", &sharedToPC, 0.0F, 999.0F, "%.2f", 0.01F)) { ApplyLive(); }
-				HelpMarker("Damage multiplier applied to hits enemies land on you, at every difficulty. Ctrl+click to type a value.");
-				if (NudgeableSlider("Damage by you##shared", &sharedByPC, 0.0F, 999.0F, "%.2f", 0.01F)) { ApplyLive(); }
-				HelpMarker("Damage multiplier applied to hits you land on enemies, at every difficulty. Ctrl+click to type a value.");
+				if (NudgeableSlider((std::string(strings::TR("CDUI_DamageToYou", "Damage to you")) + "##shared").c_str(), &sharedToPC, 0.0F, 999.0F, "%.2f", 0.01F)) { ApplyLive(); }
+				HelpMarker(strings::TR("CDUI_HelpSharedToYou", "Damage multiplier applied to hits enemies land on you, at every difficulty. Ctrl+click to type a value."));
+				if (NudgeableSlider((std::string(strings::TR("CDUI_DamageByYou", "Damage by you")) + "##shared").c_str(), &sharedByPC, 0.0F, 999.0F, "%.2f", 0.01F)) { ApplyLive(); }
+				HelpMarker(strings::TR("CDUI_HelpSharedByYou", "Damage multiplier applied to hits you land on enemies, at every difficulty. Ctrl+click to type a value."));
 			}
 			else
 			{
 				ImGuiMCP::Spacing();
-				ImGuiMCP::Text("Fill the table from:");
+				ImGuiMCP::Text("%s", strings::TR("CDUI_FillFrom", "Fill the table from:"));
 				ImGuiMCP::SameLine();
-				if (ImGuiMCP::Button("Loaded values")) { OnMainThread([]() { Difficulty::UseLoadedValues(); Difficulty::ApplyLive(); }); statusMessage = "The table holds the values this game loaded with. Press Save to keep them."; }
-				HelpMarker("Whatever your game holds at load - vanilla, or the overhaul you run. The starting point for tuning an overhaul without losing its numbers.");
+				if (ImGuiMCP::Button(strings::TR("CDUI_BtnLoaded", "Loaded values"))) { OnMainThread([]() { Difficulty::UseLoadedValues(); Difficulty::ApplyLive(); }); statusMessage = strings::TR("CDUI_StatusLoaded", "The table holds the values this game loaded with. Press Save to keep them."); }
+				HelpMarker(strings::TR("CDUI_HelpLoaded", "Whatever your game holds at load - vanilla, or the overhaul you run. The starting point for tuning an overhaul without losing its numbers."));
 				ImGuiMCP::SameLine();
-				if (ImGuiMCP::Button("Vanilla")) { OnMainThread([]() { Difficulty::UseVanillaValues(); Difficulty::ApplyLive(); }); statusMessage = "The table holds Skyrim's vanilla values. Press Save to keep them."; }
+				if (ImGuiMCP::Button(strings::TR("CDUI_BtnVanilla", "Vanilla"))) { OnMainThread([]() { Difficulty::UseVanillaValues(); Difficulty::ApplyLive(); }); statusMessage = strings::TR("CDUI_StatusVanilla", "The table holds Skyrim's vanilla values. Press Save to keep them."); }
 				ImGuiMCP::SameLine();
-				if (ImGuiMCP::Button("Blade and Blunt")) { OnMainThread([]() { Difficulty::UseBladeAndBlunt(); Difficulty::ApplyLive(); }); statusMessage = "The table holds Blade and Blunt's values. Press Save to keep them."; }
-				HelpMarker("Its published pairs: to you as vanilla, by you 1.5 / 1.25 / 1 / 1 / 0.75 / 0.5.");
+				if (ImGuiMCP::Button("Blade and Blunt")) { OnMainThread([]() { Difficulty::UseBladeAndBlunt(); Difficulty::ApplyLive(); }); statusMessage = strings::TR("CDUI_StatusBB", "The table holds Blade and Blunt's values. Press Save to keep them."); }
+				HelpMarker(strings::TR("CDUI_HelpBB", "Its published pairs: to you as vanilla, by you 1.5 / 1.25 / 1 / 1 / 0.75 / 0.5."));
 				ImGuiMCP::SameLine();
-				if (ImGuiMCP::Button("Requiem")) { OnMainThread([]() { Difficulty::UseRequiem(); Difficulty::ApplyLive(); }); statusMessage = "The table holds Requiem's values. Press Save to keep them."; }
-				HelpMarker("Every multiplier 1.0 - in Requiem the difficulty setting does no damage scaling by design.");
+				if (ImGuiMCP::Button("Requiem")) { OnMainThread([]() { Difficulty::UseRequiem(); Difficulty::ApplyLive(); }); statusMessage = strings::TR("CDUI_StatusRequiem", "The table holds Requiem's values. Press Save to keep them."); }
+				HelpMarker(strings::TR("CDUI_HelpRequiem", "Every multiplier 1.0 - in Requiem the difficulty setting does no damage scaling by design."));
 				ImGuiMCP::Spacing();
-				ImGuiMCP::TextWrapped("Each section below is one of Skyrim's own difficulty levels.");
-				ImGuiMCP::TextWrapped("Whichever difficulty you select in game uses that section's sliders.");
+				ImGuiMCP::TextWrapped("%s", strings::TR("CDUI_SectionsNote1", "Each section below is one of Skyrim's own difficulty levels."));
+				ImGuiMCP::TextWrapped("%s", strings::TR("CDUI_SectionsNote2", "Whichever difficulty you select in game uses that section's sliders."));
 				ImGuiMCP::Spacing();
 
 				// Headed with the names the GAME shows in its own difficulty menu, not the internal
 				// suffixes of the settings behind them. The ##VE/##E/... suffixes are ImGui ID
 				// disambiguators, NOT visible text - changing them would give every slider a new
 				// identity and silently reset any in-progress interaction state keyed on it.
-				RenderDifficultyLevel(0, "Novice", "Damage to you##VE", &toPCVE, "Damage by you##VE", &byPCVE);
-				RenderDifficultyLevel(1, "Apprentice", "Damage to you##E", &toPCE, "Damage by you##E", &byPCE);
-				RenderDifficultyLevel(2, "Adept", "Damage to you##N", &toPCN, "Damage by you##N", &byPCN);
-				RenderDifficultyLevel(3, "Expert", "Damage to you##H", &toPCH, "Damage by you##H", &byPCH);
-				RenderDifficultyLevel(4, "Master", "Damage to you##VH", &toPCVH, "Damage by you##VH", &byPCVH);
-				RenderDifficultyLevel(5, "Legendary", "Damage to you##L", &toPCL, "Damage by you##L", &byPCL);
+				const char* const toYou = strings::TR("CDUI_DamageToYou", "Damage to you");
+				const char* const byYou = strings::TR("CDUI_DamageByYou", "Damage by you");
+				RenderDifficultyLevel(0, DifficultyText(0), "##VE", toYou, &toPCVE, byYou, &byPCVE);
+				RenderDifficultyLevel(1, DifficultyText(1), "##E", toYou, &toPCE, byYou, &byPCE);
+				RenderDifficultyLevel(2, DifficultyText(2), "##N", toYou, &toPCN, byYou, &byPCN);
+				RenderDifficultyLevel(3, DifficultyText(3), "##H", toYou, &toPCH, byYou, &byPCH);
+				RenderDifficultyLevel(4, DifficultyText(4), "##VH", toYou, &toPCVH, byYou, &byPCVH);
+				RenderDifficultyLevel(5, DifficultyText(5), "##L", toYou, &toPCL, byYou, &byPCL);
 			}
 
 			ImGuiMCP::Spacing();
-			ImGuiMCP::SeparatorText("Difficulty by level");
-			if (ImGuiMCP::Toggle("Set the game's difficulty from your level", &byLevel))
+			ImGuiMCP::SeparatorText(strings::TR("CDUI_ByLevelHeader", "Difficulty by level"));
+			if (ImGuiMCP::Toggle(strings::TR("CDUI_ByLevel", "Set the game's difficulty from your level"), &byLevel))
 			{
 				if (byLevel) { OnMainThread([]() { Difficulty::ApplyLevelRule("switched on"); }); }
 			}
-			HelpMarker("On a save load and on every level-up, the highest difficulty whose level you have reached becomes the "
-					   "game's difficulty - the same change the Settings menu makes, so the regeneration set follows it. "
-					   "0 = that difficulty is never chosen by this rule. Off: the game's difficulty is yours to set.");
+			HelpMarker(strings::TR("CDUI_HelpByLevel", "On a save load and on every level-up, the highest difficulty whose level you have reached becomes the game's difficulty - the same change the Settings menu makes, so the regeneration set follows it. 0 = that difficulty is never chosen by this rule. Off: the game's difficulty is yours to set."));
 			if (byLevel)
 			{
 				auto* player = RE::PlayerCharacter::GetSingleton();
 				const int level = player ? static_cast<int>(player->GetLevel()) : -1;
 				const int target = level >= 0 ? Difficulty::LevelRuleTarget(level) : -1;
-				if (level >= 0) { ImGuiMCP::Text("Level %d -> %s", level, target >= 0 ? kDifficultyNames[target] : "no row applies"); }
+				if (level >= 0) { ImGuiMCP::Text(strings::TR("CDUI_LevelArrow", "Level %d -> %s"), level, target >= 0 ? DifficultyText(target) : strings::TR("CDUI_NoRow", "no row applies")); }
 				for (int d = 0; d < kDifficultyCount; ++d)
 				{
 					ImGuiMCP::PushID(std::format("levelfor{}", d).c_str());
 					int from = static_cast<int>(levelFor[static_cast<std::size_t>(d)]);
-					if (ImGuiMCP::InputInt(std::format("{} from level", kDifficultyNames[d]).c_str(), &from))
+					char levelLabel[256] = {};
+					std::snprintf(levelLabel, sizeof(levelLabel), strings::TR("CDUI_FromLevel", "%s from level"), DifficultyText(d));
+					if (ImGuiMCP::InputInt(levelLabel, &from))
 					{
 						levelFor[static_cast<std::size_t>(d)] = static_cast<std::uint32_t>(std::clamp(from, 0, 1000));
 					}
 					ImGuiMCP::PopID();
 				}
-				HelpMarker("Defaults are Blade and Blunt's milestones: one difficulty tier per ten levels.");
+				HelpMarker(strings::TR("CDUI_HelpLevelTable", "Defaults are Blade and Blunt's milestones: one difficulty tier per ten levels."));
 			}
 
 			ImGuiMCP::Spacing();
-			ImGuiMCP::SeparatorText("What the game is using right now");
+			ImGuiMCP::SeparatorText(strings::TR("CDUI_NowHeader", "What the game is using right now"));
 			const int now = Difficulty::CurrentDifficulty();
 			if (now >= 0)
 			{
 				const auto to = static_cast<Difficulty::Setting>(now);
 				const auto by = static_cast<Difficulty::Setting>(6 + now);
-				ImGuiMCP::Text("Damage at %s: x%.2f to you, x%.2f by you (loaded with x%.2f / x%.2f)", kDifficultyNames[now],
+				ImGuiMCP::Text(strings::TR("CDUI_DamageAt", "Damage at %s: x%.2f to you, x%.2f by you (loaded with x%.2f / x%.2f)"), DifficultyText(now),
 							   Difficulty::LiveValue(to), Difficulty::LiveValue(by), Difficulty::LoadedValue(to), Difficulty::LoadedValue(by));
 			}
 			else
 			{
-				ImGuiMCP::TextDisabled("No character loaded.");
+				ImGuiMCP::TextDisabled("%s", strings::TR("CDUI_NoCharacter", "No character loaded."));
 			}
-			if (!enabled) { ImGuiMCP::TextDisabled("Not enabled - nothing is written; the values above are whatever the game loaded with."); }
+			if (!enabled) { ImGuiMCP::TextDisabled("%s", strings::TR("CDUI_NotEnabled", "Not enabled - nothing is written; the values above are whatever the game loaded with.")); }
 		}
 
 
@@ -379,63 +411,58 @@ namespace UI
 				g_editingDifficultyInitialized = true;
 			}
 
-			ImGuiMCP::SeparatorText("Regeneration");
+			ImGuiMCP::SeparatorText(strings::TR("CDUI_RegenHeader", "Regeneration"));
 
-			if (ImGuiMCP::Toggle("Enabled##Regen", &enabled))
+			if (ImGuiMCP::Toggle((std::string(strings::TR("CDUI_Enabled", "Enabled")) + "##Regen").c_str(), &enabled))
 			{
 				RegenApplyLive();
 			}
-			HelpMarker("Off resets every setting below to the real vanilla value this mod captured "
-					   "the first time it loaded - not just \"stop touching them.\"");
+			HelpMarker(strings::TR("CDUI_HelpRegenEnabled", "Off resets every setting below to the real vanilla value this mod captured the first time it loaded - not just \"stop touching them.\""));
 
 			ImGuiMCP::Spacing();
-			ImGuiMCP::TextWrapped("Vanilla has no per-difficulty regeneration - this mod adds it. "
-								  "Each difficulty below keeps its own combat rates and delays; "
-								  "switching difficulty in the game's own menu switches which set "
-								  "applies, live, with no need to open this page.");
+			ImGuiMCP::TextWrapped("%s", strings::TR("CDUI_RegenIntro", "Vanilla has no per-difficulty regeneration - this mod adds it. Each difficulty below keeps its own combat rates and delays; switching difficulty in the game's own menu switches which set applies, live, with no need to open this page."));
 			ImGuiMCP::Spacing();
 
 			// ---- difficulty selector + the live "what's actually in force" readout ----
 			int editingIndex = g_editingDifficulty;
-			if (ImGuiMCP::Combo("Editing", &editingIndex, kDifficultyNames, kDifficultyCount))
+			if (ComboTR(strings::TR("CDUI_Editing", "Editing"), &editingIndex, kDifficultyKeys, kDifficultyLabels, kDifficultyCount))
 			{
 				g_editingDifficulty = editingIndex;
 			}
-			HelpMarker("Which difficulty's own values the sliders below are showing and editing.");
+			HelpMarker(strings::TR("CDUI_HelpEditing", "Which difficulty's own values the sliders below are showing and editing."));
 
 			const int active = Regeneration::LastAppliedDifficulty();
 			if (active >= 0 && active < kDifficultyCount)
 			{
-				ImGuiMCP::TextWrapped("Current difficulty: %s. %s's values are active.",
-									  kDifficultyNames[active], kDifficultyNames[active]);
+				ImGuiMCP::TextWrapped(strings::TR("CDUI_CurrentDifficulty", "Current difficulty: %s. %s's values are active."),
+									  DifficultyText(active), DifficultyText(active));
 			}
 			else
 			{
-				ImGuiMCP::TextWrapped("Current difficulty: not applied yet.");
+				ImGuiMCP::TextWrapped("%s", strings::TR("CDUI_CurrentNotApplied", "Current difficulty: not applied yet."));
 			}
 
 			ImGuiMCP::Spacing();
 
 			// ---- copy helpers - nobody wants to type six sets by hand ----
-			if (ImGuiMCP::Button("Copy this set to every difficulty"))
+			if (ImGuiMCP::Button(strings::TR("CDUI_CopyToAll", "Copy this set to every difficulty")))
 			{
 				const int from = g_editingDifficulty;
 				OnMainThread([from]() {
 					Regeneration::CopyToAllDifficulties(from);
 					Regeneration::ApplyLive();
 				});
-				statusMessage = "Copied to every difficulty. Press Save to keep it.";
+				statusMessage = strings::TR("CDUI_StatusCopiedAll", "Copied to every difficulty. Press Save to keep it.");
 			}
-			HelpMarker("Overwrites every OTHER difficulty's combat rates and delays with the set "
-					   "you are currently editing.");
+			HelpMarker(strings::TR("CDUI_HelpCopyToAll", "Overwrites every OTHER difficulty's combat rates and delays with the set you are currently editing."));
 
 			ImGuiMCP::SameLine();
 			ImGuiMCP::PushItemWidth(150.0F);
 			static int copySource = 0;
-			ImGuiMCP::Combo("##CopySource", &copySource, kDifficultyNames, kDifficultyCount);
+			ComboTR("##CopySource", &copySource, kDifficultyKeys, kDifficultyLabels, kDifficultyCount);
 			ImGuiMCP::PopItemWidth();
 			ImGuiMCP::SameLine();
-			if (ImGuiMCP::Button("Copy from"))
+			if (ImGuiMCP::Button(strings::TR("CDUI_CopyFrom", "Copy from")))
 			{
 				const int from = copySource;
 				const int to = g_editingDifficulty;
@@ -443,28 +470,27 @@ namespace UI
 					Regeneration::CopyDifficulty(from, to);
 					Regeneration::ApplyLive();
 				});
-				statusMessage = "Copied. Press Save to keep it.";
+				statusMessage = strings::TR("CDUI_StatusCopied", "Copied. Press Save to keep it.");
 			}
-			HelpMarker("Starts the difficulty you are editing from the picked difficulty's current "
-					   "values.");
+			HelpMarker(strings::TR("CDUI_HelpCopyFrom", "Starts the difficulty you are editing from the picked difficulty's current values."));
 
 			ImGuiMCP::Spacing();
 
 			// ---- In combat: the three settings this feature exists for ----
-			ImGuiMCP::SeparatorText("In combat");
-			if (RenderPerDifficultySlider("Health regen rate", "fCombatHealthRegenRateMult",
+			ImGuiMCP::SeparatorText(strings::TR("CDUI_InCombat", "In combat"));
+			if (RenderPerDifficultySlider(strings::TR("CDUI_HealthRegenRate", "Health regen rate"), "fCombatHealthRegenRateMult",
 					combatHealthRegenRateMult, 0.0F, 20.0F, "%.2f", 0.05F,
 					Regeneration::HasResolved(PDS::kCombatHealthRegenRateMult)))
 			{
 				RegenApplyLive();
 			}
-			if (RenderPerDifficultySlider("Magicka regen rate", "fCombatMagickaRegenRateMult",
+			if (RenderPerDifficultySlider(strings::TR("CDUI_MagickaRegenRate", "Magicka regen rate"), "fCombatMagickaRegenRateMult",
 					combatMagickaRegenRateMult, 0.0F, 20.0F, "%.2f", 0.05F,
 					Regeneration::HasResolved(PDS::kCombatMagickaRegenRateMult)))
 			{
 				RegenApplyLive();
 			}
-			if (RenderPerDifficultySlider("Stamina regen rate", "fCombatStaminaRegenRateMult",
+			if (RenderPerDifficultySlider(strings::TR("CDUI_StaminaRegenRate", "Stamina regen rate"), "fCombatStaminaRegenRateMult",
 					combatStaminaRegenRateMult, 0.0F, 20.0F, "%.2f", 0.05F,
 					Regeneration::HasResolved(PDS::kCombatStaminaRegenRateMult)))
 			{
@@ -474,26 +500,26 @@ namespace UI
 			ImGuiMCP::Spacing();
 
 			// ---- After damage: the pause before regen resumes, plus its ceiling ----
-			ImGuiMCP::SeparatorText("After damage");
-			if (RenderPerDifficultySlider("Health regen delay (s)", "fDamagedHealthRegenDelay",
+			ImGuiMCP::SeparatorText(strings::TR("CDUI_AfterDamage", "After damage"));
+			if (RenderPerDifficultySlider(strings::TR("CDUI_HealthRegenDelay", "Health regen delay (s)"), "fDamagedHealthRegenDelay",
 					damagedHealthRegenDelay, 0.0F, 60.0F, "%.2f", 0.5F,
 					Regeneration::HasResolved(PDS::kDamagedHealthRegenDelay)))
 			{
 				RegenApplyLive();
 			}
-			if (RenderPerDifficultySlider("Magicka regen delay (s)", "fDamagedMagickaRegenDelay",
+			if (RenderPerDifficultySlider(strings::TR("CDUI_MagickaRegenDelay", "Magicka regen delay (s)"), "fDamagedMagickaRegenDelay",
 					damagedMagickaRegenDelay, 0.0F, 60.0F, "%.2f", 0.5F,
 					Regeneration::HasResolved(PDS::kDamagedMagickaRegenDelay)))
 			{
 				RegenApplyLive();
 			}
-			if (RenderPerDifficultySlider("Stamina regen delay (s)", "fDamagedStaminaRegenDelay",
+			if (RenderPerDifficultySlider(strings::TR("CDUI_StaminaRegenDelay", "Stamina regen delay (s)"), "fDamagedStaminaRegenDelay",
 					damagedStaminaRegenDelay, 0.0F, 60.0F, "%.2f", 0.5F,
 					Regeneration::HasResolved(PDS::kDamagedStaminaRegenDelay)))
 			{
 				RegenApplyLive();
 			}
-			if (RenderPerDifficultySlider("Generic damaged-attribute delay (s)", "fDamagedAVRegenDelay",
+			if (RenderPerDifficultySlider(strings::TR("CDUI_AVRegenDelay", "Generic damaged-attribute delay (s)"), "fDamagedAVRegenDelay",
 					damagedAVRegenDelay, 0.0F, 60.0F, "%.2f", 0.5F,
 					Regeneration::HasResolved(PDS::kDamagedAVRegenDelay)))
 			{
@@ -501,21 +527,20 @@ namespace UI
 			}
 
 			ImGuiMCP::Spacing();
-			ImGuiMCP::TextWrapped("Delay ceilings - one value, every difficulty (the plan: these "
-									"only matter once a delay above is raised past them):");
-			if (RenderGlobalSlider("Health delay ceiling (s)", "fHealthRegenDelayMax",
+			ImGuiMCP::TextWrapped("%s", strings::TR("CDUI_CeilingsNote", "Delay ceilings - one value, every difficulty (the plan: these only matter once a delay above is raised past them):"));
+			if (RenderGlobalSlider(strings::TR("CDUI_HealthCeiling", "Health delay ceiling (s)"), "fHealthRegenDelayMax",
 					&healthRegenDelayMax, 0.0F, 300.0F, "%.1f", 1.0F,
 					Regeneration::HasResolved(GS::kHealthRegenDelayMax)))
 			{
 				RegenApplyLive();
 			}
-			if (RenderGlobalSlider("Magicka delay ceiling (s)", "fMagickaRegenDelayMax",
+			if (RenderGlobalSlider(strings::TR("CDUI_MagickaCeiling", "Magicka delay ceiling (s)"), "fMagickaRegenDelayMax",
 					&magickaRegenDelayMax, 0.0F, 300.0F, "%.1f", 1.0F,
 					Regeneration::HasResolved(GS::kMagickaRegenDelayMax)))
 			{
 				RegenApplyLive();
 			}
-			if (RenderGlobalSlider("Stamina delay ceiling (s)", "fStaminaRegenDelayMax",
+			if (RenderGlobalSlider(strings::TR("CDUI_StaminaCeiling", "Stamina delay ceiling (s)"), "fStaminaRegenDelayMax",
 					&staminaRegenDelayMax, 0.0F, 300.0F, "%.1f", 1.0F,
 					Regeneration::HasResolved(GS::kStaminaRegenDelayMax)))
 			{
@@ -525,14 +550,14 @@ namespace UI
 			ImGuiMCP::Spacing();
 
 			// ---- Situational - the edge cases, not the reason this feature exists ----
-			ImGuiMCP::SeparatorText("Situational");
-			if (RenderGlobalSlider("Out of breath stamina delay (s)", "fOutOfBreathStaminaRegenDelay",
+			ImGuiMCP::SeparatorText(strings::TR("CDUI_Situational", "Situational"));
+			if (RenderGlobalSlider(strings::TR("CDUI_OutOfBreath", "Out of breath stamina delay (s)"), "fOutOfBreathStaminaRegenDelay",
 					&outOfBreathStaminaRegenDelay, 0.0F, 60.0F, "%.2f", 0.5F,
 					Regeneration::HasResolved(GS::kOutOfBreathStaminaRegenDelay)))
 			{
 				RegenApplyLive();
 			}
-			if (RenderGlobalSlider("Downed essential NPC regen rate", "fEssentialDownCombatHealthRegenMult",
+			if (RenderGlobalSlider(strings::TR("CDUI_EssentialDown", "Downed essential NPC regen rate"), "fEssentialDownCombatHealthRegenMult",
 					&essentialDownCombatHealthRegenMult, 0.0F, 20.0F, "%.2f", 0.05F,
 					Regeneration::HasResolved(GS::kEssentialDownCombatHealthRegenMult)))
 			{
@@ -544,45 +569,46 @@ namespace UI
 		{
 			using namespace settings;
 
-			ImGuiMCP::SeparatorText("Debug");
+			ImGuiMCP::SeparatorText(strings::TR("CDUI_DebugHeader", "Debug"));
 
 			int level = static_cast<int>(debug::logLevel);
-			if (ImGuiMCP::Combo("Log level", &level, kLogLevelNames, kLogLevelCount))
+			if (ComboTR(strings::TR("CDUI_LogLevel", "Log level"), &level, kLogLevelKeys, kLogLevelLabels, kLogLevelCount))
 			{
 				debug::logLevel = static_cast<logger::level>(level);
 
 				OnMainThread([]() { logger::set_level(settings::debug::logLevel, settings::debug::logLevel); });
 			}
-			HelpMarker("Applies to the log immediately. Ships at Trace by default - see CLAUDE.md rule 31.");
+			HelpMarker(strings::TR("CDUI_HelpLogLevel", "Applies to the log immediately. Ships at Trace by default - see CLAUDE.md rule 31."));
 		}
 
 		void RenderButtons()
 		{
-			if (ImGuiMCP::Button("Save"))
+			if (ImGuiMCP::Button(strings::TR("CDUI_SaveBtn", "Save")))
 			{
 				OnMainThread([]() {
-					statusMessage = settings::Save() ? "Settings saved." : "Could not save the INI. See the log for why.";
+					statusMessage = settings::Save() ? strings::TR("CDUI_StatusSaved", "Settings saved.")
+													  : strings::TR("CDUI_StatusSaveFail", "Could not save the INI. See the log for why.");
 				});
 			}
-			HelpMarker("Writes every setting above back to the INI. Comments and unrelated keys are left alone.");
+			HelpMarker(strings::TR("CDUI_HelpSave", "Writes every setting above back to the INI. Comments and unrelated keys are left alone."));
 
 			ImGuiMCP::SameLine();
 
-			if (ImGuiMCP::Button("Reload from INI"))
+			if (ImGuiMCP::Button(strings::TR("CDUI_ReloadBtn", "Reload from INI")))
 			{
 				OnMainThread([]() {
 					statusMessage = settings::Reload()
-										 ? "Settings reloaded from the INI."
-										 : "Could not read the INI. See the log for why.";
+										 ? strings::TR("CDUI_StatusReloaded", "Settings reloaded from the INI.")
+										 : strings::TR("CDUI_StatusReloadFail", "Could not read the INI. See the log for why.");
 					Difficulty::ApplyLive();
 					Regeneration::ApplyLive();
 				});
 			}
-			HelpMarker("Throws away any change made here since the last save, re-reads the INI from disk, and applies it immediately.");
+			HelpMarker(strings::TR("CDUI_HelpReload", "Throws away any change made here since the last save, re-reads the INI from disk, and applies it immediately."));
 
 			ImGuiMCP::SameLine();
 
-			if (ImGuiMCP::Button("Restore defaults"))
+			if (ImGuiMCP::Button(strings::TR("CDUI_RestoreBtn", "Restore defaults")))
 			{
 				OnMainThread([]() {
 					settings::RestoreDefaults();
@@ -595,9 +621,9 @@ namespace UI
 					Regeneration::ApplyLive();
 				});
 
-				statusMessage = "Defaults restored and applied. Press Save to keep them.";
+				statusMessage = strings::TR("CDUI_StatusRestored", "Defaults restored and applied. Press Save to keep them.");
 			}
-			HelpMarker("Puts every setting back to the value it has on a fresh install, and applies it immediately. Nothing is written to the INI until you press Save.");
+			HelpMarker(strings::TR("CDUI_HelpRestore", "Puts every setting back to the value it has on a fresh install, and applies it immediately. Nothing is written to the INI until you press Save."));
 
 			if (!statusMessage.empty())
 			{
@@ -635,9 +661,9 @@ namespace UI
 
 	void __stdcall SettingsPanel::Render()
 	{
-		ImGuiMCP::TextWrapped("Changes below apply immediately to the game's own difficulty "
-							  "damage multipliers - the same ones the vanilla difficulty slider "
-							  "sets, per level. Press Save separately to keep them for next time.");
+		strings::Tick();
+
+		ImGuiMCP::TextWrapped("%s", strings::TR("CDUI_SettingsIntro", "Changes below apply immediately to the game's own difficulty damage multipliers - the same ones the vanilla difficulty slider sets, per level. Press Save separately to keep them for next time."));
 		ImGuiMCP::Spacing();
 
 		ImGuiMCP::PushItemWidth(260.0F);
@@ -655,6 +681,8 @@ namespace UI
 
 	void __stdcall SettingsPanel::RenderRegeneration()
 	{
+		strings::Tick();
+
 		ImGuiMCP::PushItemWidth(260.0F);
 
 		RenderRegenerationSection();

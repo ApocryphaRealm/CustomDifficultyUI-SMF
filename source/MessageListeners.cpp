@@ -5,6 +5,7 @@
 #include "Settings.h"
 #include "UI.h"
 #include "utils/Logger.h"
+#include "utils/Strings.h"
 
 void SKSEMessageListener(SKSE::MessagingInterface::Message* a_msg)
 {
@@ -40,6 +41,11 @@ void SKSEMessageListener(SKSE::MessagingInterface::Message* a_msg)
 		break;
 
 	case SKSE::MessagingInterface::kDataLoaded:
+		// Language first (translation rollout plan, section 2.1): the settings pages read
+		// their text from Data/Interface/Translations/CustomDifficultyUI_<language>.txt for
+		// whatever language the Apocrypha Menu Framework reports, before anything is drawn.
+		strings::Configure("CustomDifficultyUI");
+
 		// The twelve vanilla difficulty GameSettings are guaranteed available by kDataLoaded -
 		// resolve them, then apply once immediately, matching upstream's own
 		// CustomDifficultyUILoadScript.OnInit() -> Maintenance() -> ControlScript.reset().

@@ -5,6 +5,7 @@
 #include "Regeneration.h"
 #include "Settings.h"
 #include "utils/Logger.h"
+#include "utils/Strings.h"
 
 #include <cstdlib>
 #include <format>
@@ -187,6 +188,15 @@ namespace DevBenchTool
 				return;
 			}
 
+			// op=strings: which language the settings pages are drawing in, where that came
+			// from and how many texts were read - the proof a translation file actually
+			// loaded, readable without a capture.
+			if (args.find("\"strings\"") != std::string_view::npos)
+			{
+				a_write(a_sink, std::format(R"({{"ok":true,"op":"strings","strings":{}}})", strings::StatusJson()).c_str());
+				return;
+			}
+
 			if (args.find("\"reload\"") != std::string_view::npos)
 			{
 				const bool ok = settings::Reload();
@@ -259,7 +269,9 @@ namespace DevBenchTool
 			"op=bylevel:<0|1>, op=levelfor<d>:<n> (the level table, d = 0 Novice .. 5 Legendary), "
 			"op=checklevel (run the level rule now), preset:\\\"loaded|vanilla|bb|requiem\\\" (fill the "
 			"table), op=difficulty (the damage module's state: configured, loaded and live values, the "
-			"level table, the overhaul detection). No args: reports the actual vs last-applied difficulty.\","
+			"level table, the overhaul detection). op=strings reports the language the settings pages are "
+			"drawn in, where it came from and how many translated texts were loaded. No args: reports "
+			"the actual vs last-applied difficulty.\","
 			"\"inputSchema\":{\"type\":\"object\",\"properties\":{\"op\":{\"type\":\"string\"},"
 			"\"setdifficulty\":{\"type\":\"integer\"},\"testregen\":{\"type\":\"string\"},\"preset\":{\"type\":\"string\"}}},"
 			"\"readOnly\":false"
