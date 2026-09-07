@@ -26,22 +26,15 @@ namespace DevBenchTool
 		// real menu close would use, not a shortcut around it.
 		bool SetDifficulty(int a_difficulty)
 		{
-			if (a_difficulty < 0 || a_difficulty > 5)
-			{
-				return false;
-			}
+			// 1.0.5: the same setter the level rule uses (the player field plus iDifficulty:Gameplay).
+			return Difficulty::SetGameDifficulty(a_difficulty, "over DevBench");
+		}
 
-			RE::PlayerCharacter* player = RE::PlayerCharacter::GetSingleton();
-
-			if (!player)
-			{
-				return false;
-			}
-
-			player->GetGameStatsData().difficulty = a_difficulty;
-			Regeneration::CheckAndApplyIfChanged();
-
-			return true;
+		float ReadNumber(std::string_view a_args, std::string_view a_key)
+		{
+			const auto at = a_args.find(a_key);
+			if (at == std::string_view::npos) { return 0.0F; }
+			return std::strtof(std::string(a_args.substr(at + a_key.size(), 16)).c_str(), nullptr);
 		}
 
 		void ControlTool(void*, const char* a_argsJson, void* a_sink, DevBenchAPI::WriteFn a_write)
@@ -120,6 +113,80 @@ namespace DevBenchTool
 				return;
 			}
 
+			// 1.0.5 ops: enabled:<0|1>, shared:<0|1>, sharedto:<v>, sharedby:<v>, bylevel:<0|1>,
+			// levelfor<d>:<n>, "checklevel", preset:"loaded|vanilla|bb|requiem", "difficulty" (state).
+			if (args.find("enabled:") != std::string_view::npos)
+			{
+				settings::difficulty::enabled = ReadNumber(args, "enabled:") != 0.0F;
+				Difficulty::ApplyLive();
+				a_write(a_sink, std::format(R"({{"ok":true,"op":"enabled","enabled":{}}})", settings::difficulty::enabled ? "true" : "false").c_str());
+				return;
+			}
+			if (args.find("shared:") != std::string_view::npos)
+			{
+				settings::difficulty::sharedPair = ReadNumber(args, "shared:") != 0.0F;
+				Difficulty::ApplyLive();
+				a_write(a_sink, std::format(R"({{"ok":true,"op":"shared","sharedPair":{}}})", settings::difficulty::sharedPair ? "true" : "false").c_str());
+				return;
+			}
+			if (args.find("sharedto:") != std::string_view::npos)
+			{
+				settings::difficulty::sharedToPC = ReadNumber(args, "sharedto:");
+				Difficulty::ApplyLive();
+				a_write(a_sink, std::format(R"({{"ok":true,"op":"sharedto","value":{:.3f}}})", settings::difficulty::sharedToPC).c_str());
+				return;
+			}
+			if (args.find("sharedby:") != std::string_view::npos)
+			{
+				settings::difficulty::sharedByPC = ReadNumber(args, "sharedby:");
+				Difficulty::ApplyLive();
+				a_write(a_sink, std::format(R"({{"ok":true,"op":"sharedby","value":{:.3f}}})", settings::difficulty::sharedByPC).c_str());
+				return;
+			}
+			if (args.find("bylevel:") != std::string_view::npos)
+			{
+				settings::difficulty::byLevel = ReadNumber(args, "bylevel:") != 0.0F;
+				const int settled = Difficulty::ApplyLevelRule("DevBench bylevel");
+				a_write(a_sink, std::format(R"({{"ok":true,"op":"bylevel","enabled":{},"settled":{}}})", settings::difficulty::byLevel ? "true" : "false", settled).c_str());
+				return;
+			}
+			if (args.find("\"checklevel\"") != std::string_view::npos)
+			{
+				const int settled = Difficulty::ApplyLevelRule("DevBench checklevel");
+				a_write(a_sink, std::format(R"({{"ok":true,"op":"checklevel","settled":{},"state":{}}})", settled, Difficulty::StatusJson()).c_str());
+				return;
+			}
+			for (std::size_t d = 0; d < 6; ++d)
+			{
+				const std::string lf = std::format("levelfor{}:", d);
+				if (args.find(lf) != std::string_view::npos)
+				{
+					settings::difficulty::levelFor[d] = static_cast<std::uint32_t>(std::max(0.0F, ReadNumber(args, lf)));
+					a_write(a_sink, std::format(R"({{"ok":true,"op":"{}","value":{}}})", lf, settings::difficulty::levelFor[d]).c_str());
+					return;
+				}
+			}
+			if (const auto at = args.find("\"preset\":\""); at != std::string_view::npos)
+			{
+				const auto start = at + 10;
+				const auto end = args.find('"', start);
+				const std::string which(args.substr(start, end == std::string_view::npos ? 0 : end - start));
+				bool ok = true;
+				if (which == "loaded") { Difficulty::UseLoadedValues(); }
+				else if (which == "vanilla") { Difficulty::UseVanillaValues(); }
+				else if (which == "bb") { Difficulty::UseBladeAndBlunt(); }
+				else if (which == "requiem") { Difficulty::UseRequiem(); }
+				else { ok = false; }
+				if (ok) { Difficulty::ApplyLive(); }
+				a_write(a_sink, std::format(R"({{"ok":{},"op":"preset","preset":"{}"}})", ok ? "true" : "false", which).c_str());
+				return;
+			}
+			if (args.find("\"difficulty\"") != std::string_view::npos)
+			{
+				a_write(a_sink, std::format(R"({{"ok":true,"op":"difficulty","state":{}}})", Difficulty::StatusJson()).c_str());
+				return;
+			}
+
 			if (args.find("\"reload\"") != std::string_view::npos)
 			{
 				const bool ok = settings::Reload();
@@ -187,10 +254,14 @@ namespace DevBenchTool
 			"regeneration settings for the CURRENT difficulty. op=reload re-reads the INI and "
 			"applies it. testregen:\\\"<difficulty>,<value>\\\" is a TEST-ONLY hook that turns "
 			"regeneration on and writes one regen setting directly for a given difficulty, for the "
-			"gate that proves per-difficulty switching actually works. No args: reports the "
-			"actual vs last-applied difficulty.\","
+			"gate that proves per-difficulty switching actually works. 1.0.5: op=enabled:<0|1>, "
+			"op=shared:<0|1>, op=sharedto:<v>, op=sharedby:<v> (one pair for every difficulty), "
+			"op=bylevel:<0|1>, op=levelfor<d>:<n> (the level table, d = 0 Novice .. 5 Legendary), "
+			"op=checklevel (run the level rule now), preset:\\\"loaded|vanilla|bb|requiem\\\" (fill the "
+			"table), op=difficulty (the damage module's state: configured, loaded and live values, the "
+			"level table, the overhaul detection). No args: reports the actual vs last-applied difficulty.\","
 			"\"inputSchema\":{\"type\":\"object\",\"properties\":{\"op\":{\"type\":\"string\"},"
-			"\"setdifficulty\":{\"type\":\"integer\"},\"testregen\":{\"type\":\"string\"}}},"
+			"\"setdifficulty\":{\"type\":\"integer\"},\"testregen\":{\"type\":\"string\"},\"preset\":{\"type\":\"string\"}}},"
 			"\"readOnly\":false"
 			"}";
 

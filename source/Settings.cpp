@@ -90,6 +90,10 @@ namespace settings
 			bool enabled;
 			float toPCVE, toPCE, toPCN, toPCH, toPCVH, toPCL;
 			float byPCVE, byPCE, byPCN, byPCH, byPCVH, byPCL;
+			bool sharedPair;
+			float sharedToPC, sharedByPC;
+			bool byLevel;
+			std::array<std::uint32_t, 6> levelFor;
 
 			bool regenEnabled;
 		};
@@ -107,6 +111,8 @@ namespace settings
 			defaults.toPCH = toPCH; defaults.toPCVH = toPCVH; defaults.toPCL = toPCL;
 			defaults.byPCVE = byPCVE; defaults.byPCE = byPCE; defaults.byPCN = byPCN;
 			defaults.byPCH = byPCH; defaults.byPCVH = byPCVH; defaults.byPCL = byPCL;
+			defaults.sharedPair = sharedPair; defaults.sharedToPC = sharedToPC; defaults.sharedByPC = sharedByPC;
+			defaults.byLevel = byLevel; defaults.levelFor = levelFor;
 
 			defaults.regenEnabled = regeneration::enabled;
 		}
@@ -605,6 +611,16 @@ namespace settings
 				byPCH = ClampMult(ReadFromFile<float>(c, "fByPCH:Difficulty", byPCH));
 				byPCVH = ClampMult(ReadFromFile<float>(c, "fByPCVH:Difficulty", byPCVH));
 				byPCL = ClampMult(ReadFromFile<float>(c, "fByPCL:Difficulty", byPCL));
+
+				sharedPair = ReadFromFile<bool>(c, "bSharedPair:Difficulty", sharedPair);
+				sharedToPC = ClampMult(ReadFromFile<float>(c, "fSharedToPC:Difficulty", sharedToPC));
+				sharedByPC = ClampMult(ReadFromFile<float>(c, "fSharedByPC:Difficulty", sharedByPC));
+				byLevel = ReadFromFile<bool>(c, "bByLevel:Difficulty", byLevel);
+				for (std::size_t i = 0; i < levelFor.size(); ++i)
+				{
+					const std::string key = std::string("uLevel") + kDifficultySuffix[i] + ":Difficulty";
+					levelFor[i] = ReadFromFile<std::uint32_t>(c, key.c_str(), levelFor[i]);
+				}
 			}
 
 			{
@@ -669,6 +685,14 @@ namespace settings
 			add("fByPCH:Difficulty", byPCH);
 			add("fByPCVH:Difficulty", byPCVH);
 			add("fByPCL:Difficulty", byPCL);
+			add("bSharedPair:Difficulty", sharedPair);
+			add("fSharedToPC:Difficulty", sharedToPC);
+			add("fSharedByPC:Difficulty", sharedByPC);
+			add("bByLevel:Difficulty", byLevel);
+			for (std::size_t i = 0; i < levelFor.size(); ++i)
+			{
+				add((std::string("uLevel") + kDifficultySuffix[i] + ":Difficulty").c_str(), levelFor[i]);
+			}
 		}
 
 		{
@@ -746,6 +770,14 @@ namespace settings
 		ok &= WriteFloat(kDifficultySection, "fByPCH", byPCH);
 		ok &= WriteFloat(kDifficultySection, "fByPCVH", byPCVH);
 		ok &= WriteFloat(kDifficultySection, "fByPCL", byPCL);
+		ok &= WriteBool(kDifficultySection, "bSharedPair", sharedPair);
+		ok &= WriteFloat(kDifficultySection, "fSharedToPC", sharedToPC);
+		ok &= WriteFloat(kDifficultySection, "fSharedByPC", sharedByPC);
+		ok &= WriteBool(kDifficultySection, "bByLevel", byLevel);
+		for (std::size_t i = 0; i < levelFor.size(); ++i)
+		{
+			ok &= WriteUInt(kDifficultySection, (std::string("uLevel") + kDifficultySuffix[i]).c_str(), levelFor[i]);
+		}
 
 		// Qualified explicitly rather than another "using namespace regeneration" - that would
 		// make "enabled" ambiguous against difficulty::enabled, still in scope from above.
@@ -792,6 +824,8 @@ namespace settings
 		toPCH = defaults.toPCH; toPCVH = defaults.toPCVH; toPCL = defaults.toPCL;
 		byPCVE = defaults.byPCVE; byPCE = defaults.byPCE; byPCN = defaults.byPCN;
 		byPCH = defaults.byPCH; byPCVH = defaults.byPCVH; byPCL = defaults.byPCL;
+		sharedPair = defaults.sharedPair; sharedToPC = defaults.sharedToPC; sharedByPC = defaults.sharedByPC;
+		byLevel = defaults.byLevel; levelFor = defaults.levelFor;
 
 		// The regeneration FLOAT settings are deliberately NOT reset here - there is no
 		// compile-time default for them (see the Defaults struct's own comment above), so their

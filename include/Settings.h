@@ -65,6 +65,20 @@ namespace settings
 		inline float byPCH = 0.75F;
 		inline float byPCVH = 0.50F;
 		inline float byPCL = 0.25F;
+
+		// 1.0.5 - Yet Another Difficulty Mod's modes. One pair for every difficulty (its Simple
+		// mode): while on, the pair below is written for all six difficulties instead of the twelve
+		// above.
+		inline bool sharedPair = false;
+		inline float sharedToPC = 1.0F;
+		inline float sharedByPC = 1.0F;
+
+		// Difficulty by level (its Dynamic mode): the level from which each difficulty applies,
+		// VE/E/N/H/VH/L order, 0 = that row is not used. On a save load and on every level-up the
+		// highest difficulty whose level the player has reached becomes the game's difficulty.
+		// Defaults are Blade and Blunt's milestones: one tier per ten levels.
+		inline bool byLevel = false;
+		inline std::array<std::uint32_t, 6> levelFor{ 1, 10, 20, 30, 40, 50 };
 	}
 
 	// Regeneration control, added 2026-09-02 per plan

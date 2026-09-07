@@ -10,6 +10,7 @@
 #include "utils/Toggle.h"
 
 #include <algorithm>
+#include <format>
 #include <array>
 #include <string>
 
@@ -61,6 +62,8 @@ namespace UI
 				"igSpacing",
 				"igPushItemWidth",
 				"igPopItemWidth",
+				// The level table (1.0.5).
+				"igInputInt",
 				// Needed by NudgeableSlider's arrow-key nudge.
 				"igIsKeyPressed_Bool",
 				"igIsItemClicked",
@@ -205,22 +208,31 @@ namespace UI
 			return NudgeableSlider(labelWithName.c_str(), a_value, a_min, a_max, a_format, a_step);
 		}
 
-		void RenderDifficultyLevel(const char* a_header, const char* a_toPCLabel, float* a_toPC,
+		constexpr const char* const kDifficultyNames[] = { "Novice", "Apprentice", "Adept", "Expert", "Master", "Legendary" };
+		constexpr int kDifficultyCount = 6;
+
+		// One difficulty's pair. The loaded value (what this game holds at data load - vanilla, or the
+		// overhaul's number) sits under each pair so an overhaul can be tuned without losing its numbers.
+		void RenderDifficultyLevel(int a_difficulty, const char* a_header, const char* a_toPCLabel, float* a_toPC,
 			const char* a_byPCLabel, float* a_byPC)
 		{
 			ImGuiMCP::SeparatorText(a_header);
 
-			if (NudgeableSlider(a_toPCLabel, a_toPC, 0.0F, 10.0F, "%.2f", 0.05F))
+			if (NudgeableSlider(a_toPCLabel, a_toPC, 0.0F, 999.0F, "%.2f", 0.01F))
 			{
 				ApplyLive();
 			}
-			HelpMarker("Damage multiplier applied to hits enemies land on you at this difficulty.");
+			HelpMarker("Damage multiplier applied to hits enemies land on you at this difficulty. Ctrl+click to type a value.");
 
-			if (NudgeableSlider(a_byPCLabel, a_byPC, 0.0F, 10.0F, "%.2f", 0.05F))
+			if (NudgeableSlider(a_byPCLabel, a_byPC, 0.0F, 999.0F, "%.2f", 0.01F))
 			{
 				ApplyLive();
 			}
-			HelpMarker("Damage multiplier applied to hits you land on enemies at this difficulty.");
+			HelpMarker("Damage multiplier applied to hits you land on enemies at this difficulty. Ctrl+click to type a value.");
+
+			const auto to = static_cast<Difficulty::Setting>(a_difficulty);
+			const auto by = static_cast<Difficulty::Setting>(6 + a_difficulty);
+			ImGuiMCP::TextDisabled("    loaded with: x%.2f to you, x%.2f by you", Difficulty::LoadedValue(to), Difficulty::LoadedValue(by));
 		}
 
 		void RenderDifficultySection()
@@ -229,42 +241,124 @@ namespace UI
 
 			ImGuiMCP::SeparatorText("Custom Difficulty UI");
 
+			// The built-in patch (plan section 21 of Character Progression Control, shared with this
+			// mod): the overhaul's numbers are the loaded values, and this mod writes last while enabled.
+			const std::string overhaul = Difficulty::OverhaulLoaded();
+			if (!overhaul.empty())
+			{
+				ImGuiMCP::TextWrapped("%s is loaded. Its damage multipliers are the loaded values shown under each pair; nothing "
+									  "here touches them until Enabled is on - then this mod writes last and supersedes them.",
+									  overhaul.c_str());
+				bool bbFound = false;
+				const bool bbScaling = Difficulty::BladeAndBluntLevelScaling(bbFound);
+				if (Difficulty::BladeAndBluntPresent())
+				{
+					if (bbScaling) { ImGuiMCP::TextWrapped("BladeAndBlunt.ini has bLevelBasedDifficulty = true: its DLL steps the multipliers at levels 10 to 50 as well. Set it to false while this mod is enabled - two writers on one value is never stable. Difficulty by level below does the same job."); }
+					else if (!bbFound) { ImGuiMCP::TextWrapped("BladeAndBlunt.ini was not found, so its bLevelBasedDifficulty could not be read. If it is true, set it to false while this mod is enabled."); }
+				}
+				ImGuiMCP::Spacing();
+			}
+
 			if (ImGuiMCP::Toggle("Enabled", &enabled))
 			{
 				ApplyLive();
 			}
-			HelpMarker("Off resets every multiplier below to Skyrim's own real vanilla defaults - "
-					   "not just \"stop touching them.\"");
-			ImGuiMCP::Spacing();
-			ImGuiMCP::TextWrapped("Each section below is one of Skyrim's own difficulty levels.");
-			ImGuiMCP::TextWrapped("Whichever difficulty you select in game uses that section's sliders.");
+			HelpMarker("Off writes nothing: the multipliers your game loaded with (vanilla, or an overhaul's) stay exactly "
+					   "as they are, and switching off hands them back. On: the pairs below are written, and the game "
+					   "reads the pair for the difficulty you play on.");
 			ImGuiMCP::Spacing();
 
-			// Headed with the names the GAME shows in its own difficulty menu, not the internal
-			// suffixes of the settings behind them. Each section writes the vanilla
-			// fDiffMultHPToPC*/fDiffMultHPByPC* game setting for that difficulty, so the section
-			// a player is editing is exactly the one that takes effect when they select that
-			// difficulty in game - picking Legendary uses the Legendary sliders, with nothing
-			// extra needed to connect them.
-			//
-			// The old headings said "Very Easy / Easy / Normal / High / Very High" - the engine's
-			// internal names, and not even accurately ("Hard"/"Very Hard" internally). Nothing in
-			// Skyrim's own UI ever calls a difficulty "Very High", so a player had to guess which
-			// slider was the one they were actually playing on.
-			//
-			// The ##VE/##E/... suffixes are ImGui ID disambiguators, NOT visible text - they are
-			// deliberately left alone. Changing them would give every slider a new identity and
-			// silently reset any in-progress interaction state keyed on it.
-			RenderDifficultyLevel("Novice", "Damage to you##VE", &toPCVE, "Damage by you##VE", &byPCVE);
-			RenderDifficultyLevel("Apprentice", "Damage to you##E", &toPCE, "Damage by you##E", &byPCE);
-			RenderDifficultyLevel("Adept", "Damage to you##N", &toPCN, "Damage by you##N", &byPCN);
-			RenderDifficultyLevel("Expert", "Damage to you##H", &toPCH, "Damage by you##H", &byPCH);
-			RenderDifficultyLevel("Master", "Damage to you##VH", &toPCVH, "Damage by you##VH", &byPCVH);
-			RenderDifficultyLevel("Legendary", "Damage to you##L", &toPCL, "Damage by you##L", &byPCL);
+			if (ImGuiMCP::Toggle("One pair for every difficulty", &sharedPair))
+			{
+				ApplyLive();
+			}
+			HelpMarker("On: the single pair below is written for all six difficulties, so the game's difficulty setting "
+					   "makes no difference to damage. Off: each difficulty has its own pair.");
+
+			if (sharedPair)
+			{
+				if (NudgeableSlider("Damage to you##shared", &sharedToPC, 0.0F, 999.0F, "%.2f", 0.01F)) { ApplyLive(); }
+				HelpMarker("Damage multiplier applied to hits enemies land on you, at every difficulty. Ctrl+click to type a value.");
+				if (NudgeableSlider("Damage by you##shared", &sharedByPC, 0.0F, 999.0F, "%.2f", 0.01F)) { ApplyLive(); }
+				HelpMarker("Damage multiplier applied to hits you land on enemies, at every difficulty. Ctrl+click to type a value.");
+			}
+			else
+			{
+				ImGuiMCP::Spacing();
+				ImGuiMCP::Text("Fill the table from:");
+				ImGuiMCP::SameLine();
+				if (ImGuiMCP::Button("Loaded values")) { OnMainThread([]() { Difficulty::UseLoadedValues(); Difficulty::ApplyLive(); }); statusMessage = "The table holds the values this game loaded with. Press Save to keep them."; }
+				HelpMarker("Whatever your game holds at load - vanilla, or the overhaul you run. The starting point for tuning an overhaul without losing its numbers.");
+				ImGuiMCP::SameLine();
+				if (ImGuiMCP::Button("Vanilla")) { OnMainThread([]() { Difficulty::UseVanillaValues(); Difficulty::ApplyLive(); }); statusMessage = "The table holds Skyrim's vanilla values. Press Save to keep them."; }
+				ImGuiMCP::SameLine();
+				if (ImGuiMCP::Button("Blade and Blunt")) { OnMainThread([]() { Difficulty::UseBladeAndBlunt(); Difficulty::ApplyLive(); }); statusMessage = "The table holds Blade and Blunt's values. Press Save to keep them."; }
+				HelpMarker("Its published pairs: to you as vanilla, by you 1.5 / 1.25 / 1 / 1 / 0.75 / 0.5.");
+				ImGuiMCP::SameLine();
+				if (ImGuiMCP::Button("Requiem")) { OnMainThread([]() { Difficulty::UseRequiem(); Difficulty::ApplyLive(); }); statusMessage = "The table holds Requiem's values. Press Save to keep them."; }
+				HelpMarker("Every multiplier 1.0 - in Requiem the difficulty setting does no damage scaling by design.");
+				ImGuiMCP::Spacing();
+				ImGuiMCP::TextWrapped("Each section below is one of Skyrim's own difficulty levels.");
+				ImGuiMCP::TextWrapped("Whichever difficulty you select in game uses that section's sliders.");
+				ImGuiMCP::Spacing();
+
+				// Headed with the names the GAME shows in its own difficulty menu, not the internal
+				// suffixes of the settings behind them. The ##VE/##E/... suffixes are ImGui ID
+				// disambiguators, NOT visible text - changing them would give every slider a new
+				// identity and silently reset any in-progress interaction state keyed on it.
+				RenderDifficultyLevel(0, "Novice", "Damage to you##VE", &toPCVE, "Damage by you##VE", &byPCVE);
+				RenderDifficultyLevel(1, "Apprentice", "Damage to you##E", &toPCE, "Damage by you##E", &byPCE);
+				RenderDifficultyLevel(2, "Adept", "Damage to you##N", &toPCN, "Damage by you##N", &byPCN);
+				RenderDifficultyLevel(3, "Expert", "Damage to you##H", &toPCH, "Damage by you##H", &byPCH);
+				RenderDifficultyLevel(4, "Master", "Damage to you##VH", &toPCVH, "Damage by you##VH", &byPCVH);
+				RenderDifficultyLevel(5, "Legendary", "Damage to you##L", &toPCL, "Damage by you##L", &byPCL);
+			}
+
+			ImGuiMCP::Spacing();
+			ImGuiMCP::SeparatorText("Difficulty by level");
+			if (ImGuiMCP::Toggle("Set the game's difficulty from your level", &byLevel))
+			{
+				if (byLevel) { OnMainThread([]() { Difficulty::ApplyLevelRule("switched on"); }); }
+			}
+			HelpMarker("On a save load and on every level-up, the highest difficulty whose level you have reached becomes the "
+					   "game's difficulty - the same change the Settings menu makes, so the regeneration set follows it. "
+					   "0 = that difficulty is never chosen by this rule. Off: the game's difficulty is yours to set.");
+			if (byLevel)
+			{
+				auto* player = RE::PlayerCharacter::GetSingleton();
+				const int level = player ? static_cast<int>(player->GetLevel()) : -1;
+				const int target = level >= 0 ? Difficulty::LevelRuleTarget(level) : -1;
+				if (level >= 0) { ImGuiMCP::Text("Level %d -> %s", level, target >= 0 ? kDifficultyNames[target] : "no row applies"); }
+				for (int d = 0; d < kDifficultyCount; ++d)
+				{
+					ImGuiMCP::PushID(std::format("levelfor{}", d).c_str());
+					int from = static_cast<int>(levelFor[static_cast<std::size_t>(d)]);
+					if (ImGuiMCP::InputInt(std::format("{} from level", kDifficultyNames[d]).c_str(), &from))
+					{
+						levelFor[static_cast<std::size_t>(d)] = static_cast<std::uint32_t>(std::clamp(from, 0, 1000));
+					}
+					ImGuiMCP::PopID();
+				}
+				HelpMarker("Defaults are Blade and Blunt's milestones: one difficulty tier per ten levels.");
+			}
+
+			ImGuiMCP::Spacing();
+			ImGuiMCP::SeparatorText("What the game is using right now");
+			const int now = Difficulty::CurrentDifficulty();
+			if (now >= 0)
+			{
+				const auto to = static_cast<Difficulty::Setting>(now);
+				const auto by = static_cast<Difficulty::Setting>(6 + now);
+				ImGuiMCP::Text("Damage at %s: x%.2f to you, x%.2f by you (loaded with x%.2f / x%.2f)", kDifficultyNames[now],
+							   Difficulty::LiveValue(to), Difficulty::LiveValue(by), Difficulty::LoadedValue(to), Difficulty::LoadedValue(by));
+			}
+			else
+			{
+				ImGuiMCP::TextDisabled("No character loaded.");
+			}
+			if (!enabled) { ImGuiMCP::TextDisabled("Not enabled - nothing is written; the values above are whatever the game loaded with."); }
 		}
 
-		constexpr const char* const kDifficultyNames[] = { "Novice", "Apprentice", "Adept", "Expert", "Master", "Legendary" };
-		constexpr int kDifficultyCount = 6;
 
 		void RenderRegenerationSection()
 		{

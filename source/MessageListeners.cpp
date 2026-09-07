@@ -76,13 +76,12 @@ void SKSEMessageListener(SKSE::MessagingInterface::Message* a_msg)
 		// on every later save load (and a fresh New Game) too, not just the game's first boot,
 		// since GameSettings are process-global and a different save doesn't carry this
 		// plugin's own values with it the way an actor value would.
-		logger::debug("kPostLoadGame/kNewGame received; re-applying difficulty and regeneration settings");
-		Difficulty::ApplyLive();
-
-		// A hard re-apply, not just a change-check: unlike the menu-close path, a fresh load is
-		// exactly when the plan says to unconditionally "read the difficulty, apply that set" -
-		// there is no meaningful "last applied" value carried over from a previous game session.
-		Regeneration::ApplyLive();
+		logger::debug("kPostLoadGame/kNewGame received; the level rule, then re-applying difficulty and regeneration settings");
+		// 1.0.5: the level rule first (it may move the game's difficulty), then both modules
+		// re-apply from the SKSE task queue - after every other plugin's own load handler, so
+		// this mod writes last beside an overhaul (plan section 21). A hard re-apply, not just a
+		// change-check: a fresh load is when the plan says "read the difficulty, apply that set".
+		Difficulty::OnGameLoaded();
 		break;
 
 	default:

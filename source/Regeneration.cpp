@@ -231,6 +231,18 @@ namespace Regeneration
 		const int difficulty = CurrentDifficulty();
 		const bool enabled = settings::regeneration::enabled;
 
+		// Off writes nothing (1.0.5, logic library 43): the values this game loaded with stay as
+		// they are. The one exception is the on->off flip - this process has written, so the loaded
+		// values are handed back once.
+		static bool s_wrote = false;
+		if (!enabled && !s_wrote)
+		{
+			g_lastAppliedDifficulty = difficulty;
+			diagnostics::RecordRegenerationApplied(enabled, difficulty);
+			logger::debug("Regeneration::ApplyLive: disabled and nothing written this session - the loaded values stay");
+			return;
+		}
+
 		for (const PerDifficultyInfo& info : g_perDifficulty)
 		{
 			if (!info.resolved)
@@ -242,7 +254,7 @@ namespace Regeneration
 
 			info.resolved->data.f = value;
 			logger::debug("Regeneration::ApplyLive: \"{}\" = {:.3f}{}", info.gameSettingName, value,
-				enabled ? "" : " (vanilla - mod disabled)");
+				enabled ? "" : " (the loaded value - mod disabled)");
 		}
 
 		for (const GlobalInfo& info : g_global)
@@ -256,9 +268,10 @@ namespace Regeneration
 
 			info.resolved->data.f = value;
 			logger::debug("Regeneration::ApplyLive: \"{}\" = {:.3f}{}", info.gameSettingName, value,
-				enabled ? "" : " (vanilla - mod disabled)");
+				enabled ? "" : " (the loaded value - mod disabled)");
 		}
 
+		s_wrote = enabled;
 		g_lastAppliedDifficulty = difficulty;
 		diagnostics::RecordRegenerationApplied(enabled, difficulty);
 	}

@@ -2,7 +2,7 @@
 
 Version 1.0.4
 
-**Version 1.0.4.** A fresh, native C++ implementation of **Custom Difficulty UI** (Nexus
+**Version 1.0.5.** A fresh, native C++ implementation of **Custom Difficulty UI** (Nexus
 skyrimspecialedition/mods/14362) with a real in-game settings page, registering with
 **Apocrypha Menu Framework (AMF)** by its real module name and falling back to stock SKSE Menu
 Framework where AMF is not installed. This isn't a port of a compiled DLL - the original mod has
@@ -53,6 +53,17 @@ AMF, the SMF-compatible menu framework this project builds and maintains) in pla
 original's SkyUI MCM. Game mechanics (and the vanilla GameSetting names/values themselves) aren't
 copyrightable, so this carries no licensing entanglement with the original mod - only its own
 Papyrus/ESP implementation would be, and none of that was copied.
+
+## 1.0.5 - off writes nothing, one pair for all, difficulty by level, the Blade and Blunt / Requiem patch
+
+Disabled writes nothing: the twelve multipliers are captured at data load, after every plugin's
+records, and switching off hands those loaded values back. So an overhaul's numbers (Blade and
+Blunt's, Requiem's) are never reverted by this mod being installed. Both are detected, the page
+says so, and presets fill the table from the loaded values, Blade and Blunt's pairs, Requiem's
+(all 1.0) or vanilla; while enabled this mod writes last and supersedes them. One pair for every
+difficulty writes a single pair six times (Yet Another Difficulty Mod's Simple mode). Difficulty by
+level sets the game's difficulty from your level on load and on every level-up (its Dynamic mode),
+with Blade and Blunt's milestones as the defaults.
 
 ## Regeneration - per-difficulty, added in 1.0.2
 

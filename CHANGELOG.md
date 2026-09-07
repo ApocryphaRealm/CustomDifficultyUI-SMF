@@ -23,6 +23,18 @@ reclaimed), **scratch** (a hypothesis-test build that never held a real number).
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
+## 1.0.5 - 2026-09-06 - working
+
+### Fixed
+- Disabled wrote Skyrim's compiled vanilla damage multipliers over whatever the game loaded with, on every load. Beside Blade and Blunt or Requiem that silently reverted their tuning. Disabled now writes nothing: the twelve values are captured at data load, after every plugin's records, and switching off hands those loaded values back once. The regeneration page follows the same rule.
+
+### Added
+- One pair for every difficulty (Yet Another Difficulty Mod's Simple mode): a switch and a single pair written for all six difficulties.
+- Difficulty by level (its Dynamic mode): a switch and six level thresholds; on a save load and on every level-up the highest difficulty whose level the player has reached becomes the game's difficulty. Defaults are Blade and Blunt's milestones, one tier per ten levels.
+- The built-in Blade and Blunt / Requiem patch: both plugins are detected, the page says their values are the loaded values and that this mod writes last while enabled, and presets fill the table - the loaded values, Blade and Blunt's pairs, Requiem's (all 1.0), vanilla. Writes go through the task queue after the other plugins' handlers and repeat on the level-up event. Blade and Blunt's INI is read and the page asks for bLevelBasedDifficulty = false while it is present.
+- The damage sliders run 0 to 999 in 0.01 steps (Ctrl+click to type); the loaded value is shown under every pair, and a live readout of the pair in use.
+- customdifficulty.control: enabled, shared, sharedto, sharedby, bylevel, levelfor<d>, checklevel, preset and difficulty ops; setdifficulty now also writes iDifficulty:Gameplay.
+
 ## 1.0.4 - 2026-09-05 - working
 
 ### Fixed
