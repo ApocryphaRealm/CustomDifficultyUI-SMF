@@ -10,7 +10,7 @@ no SKSE plugin at all, only a SkyUI MCM (Papyrus + ESP) - so there is no existin
 fork; this is a fresh CommonLibSSE-NG project that mirrors the original's own real settings
 surface 1:1, then goes beyond it with per-difficulty regeneration control the original never had.
 
-**Licence: MIT.** Original code, written from scratch for this project - see `LICENSE`.
+**Licence: GPL-3.0-or-later.** Original code, written from scratch for this project - see `LICENSE`.
 
 ## What it does
 
@@ -139,3 +139,9 @@ Version 1.0.3
 Added a Skyrim 1.7.99 / 1.7.104 build; the mod installs as a FOMOD that picks the build for your game version.
 Version 1.0.2
 Added a Regeneration page with per-difficulty regeneration control that follows the game's own difficulty setting live.
+
+## Licence
+
+GPL-3.0-or-later - see `LICENSE` and `NOTICE.md`; components under other licences, with their notices, are in
+`THIRD_PARTY_NOTICES.md`. Versions before 2026-09-13 carried an MIT licence in error: the Skyrim 1.7.x build links
+CommonLibSSE-NG 7.2.0, which is GPL-3.0-or-later.
