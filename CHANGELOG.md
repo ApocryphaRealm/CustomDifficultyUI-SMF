@@ -25,6 +25,11 @@ reclaimed), **scratch** (a hypothesis-test build that never held a real number).
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 1.0.7 - 2026-09-16 - working
+
+### Changed
+- Relicensed the whole mod under GPL-3.0-or-later, as the libraries it is built on require (CommonLibSSE-NG and the SKSE Menu Framework header are GPL-3.0). The licence text, the copyright notice and the third-party notices ship inside the download. No gameplay change.
+
 ## 1.0.6 - 2026-09-07 - working
 
 ### Added
