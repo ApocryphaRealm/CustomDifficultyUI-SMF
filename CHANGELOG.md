@@ -25,6 +25,13 @@ reclaimed), **scratch** (a hypothesis-test build that never held a real number).
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 1.0.8 - 2026-09-18 - untested
+
+### Changed
+- The Address Library pre-check runs before anything else at load: a missing Address Library file for the game version
+  gets a message naming the file and the plugin loads inert, instead of CommonLibSSE-NG's bare failure line
+  (oproso's report on the Perfected Wheeler page, 2026-09-18: a guard placed after SKSE::Init never ran). No other change.
+
 ## 1.0.7 - 2026-09-16 - working
 
 ### Changed
